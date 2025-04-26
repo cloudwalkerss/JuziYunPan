@@ -1,0 +1,50 @@
+server:
+  port: 8080
+spring:
+  security:
+    jwt:
+      key: 'juzic'
+      expire: 72
+      limit:
+        base: 10
+        upgrade: 300
+        frequency: 5
+  web:
+    flow:
+      period: 3
+      limit: 100
+      block: 30
+  mail:
+    host: smtp.qq.com
+    port: 465
+    protocol: smtp
+    username: 你的邮箱
+    password: 写你的授权码
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+            required: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    virtual-host: /
+    username: guest
+    password: guest
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 100
+
+
+
+  datasource:
+      url: jdbc:mysql://localhost:3306/yunpan?characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+      username: root
+      password: root
+      driver-class-name: com.mysql.cj.jdbc.Driver
+
