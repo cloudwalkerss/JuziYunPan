@@ -18,8 +18,8 @@ spring:
     host: smtp.qq.com
     port: 465
     protocol: smtp
-    username: 你的邮箱
-    password: 写你的授权码
+    username: 2833227241@qq.com
+    password: ozvlejvotvyddeid
     default-encoding: UTF-8
     properties:
       mail:
@@ -39,8 +39,13 @@ spring:
       simple:
         acknowledge-mode: manual
         prefetch: 100
-
-
+  servlet:
+    multipart:
+      enabled: true                   # 启用文件上传功能
+      max-file-size: 100MB            # 单个文件最大大小
+      max-request-size: 100MB         # 单次请求最大大小
+      file-size-threshold: 0          # 文件写入磁盘的阈值
+#      location: /tmp                  # 上传文件的临时目录
 
   datasource:
       url: jdbc:mysql://localhost:3306/yunpan?characterEncoding=utf-8&serverTimezone=Asia/Shanghai
@@ -48,3 +53,13 @@ spring:
       password: root
       driver-class-name: com.mysql.cj.jdbc.Driver
 
+# PageHelper配置
+pagehelper:
+  helper-dialect: mysql
+  reasonable: true
+  support-methods-arguments: true
+  params: count=countSql
+  page-size-zero: true
+
+project:
+  folder: E:\juzipan

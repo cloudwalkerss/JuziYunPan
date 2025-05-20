@@ -1,7 +1,7 @@
 <script setup>
 import {ref, onMounted, reactive} from 'vue';
 import {get, login} from "@/net/index.js";
-import {ElMessage} from "element-plus";
+import {ElMessage, ElForm, ElFormItem, ElInput, ElButton, ElCheckbox} from "element-plus";
 import router from "@/router/index.js";
 import axios from "axios";
 
@@ -11,12 +11,32 @@ const captchaInput = ref('');
 const captchaId = ref('');
 // 验证码图片URL
 const captchaUrl = ref('');
+// 登录表单引用
+const loginFormRef = ref(null);
+// 是否正在登录
+const loading = ref(false);
 
 //表单数据
 const form = reactive({
   username: '',
   password: '',
   captcha: '',
+});
+
+// 表单验证规则
+const rules = reactive({
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 6, max: 20, message: '用户名长度应在6到20个字符之间', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 8, max: 20, message: '密码长度应在8到20个字符之间', trigger: 'blur' }
+  ],
+  captcha: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^[a-zA-Z0-9]{4,6}$/, message: '验证码格式不正确', trigger: 'blur' }
+  ]
 });
 
 // 记住我选项
@@ -26,7 +46,7 @@ const rememberMe = ref(false);
 const refreshCaptcha = () => {
   // 生成一个时间戳，防止缓存
   const timestamp = new Date().getTime();
-  captchaUrl.value = `http://localhost:8080/captcha/generate?t=${timestamp}`;
+  captchaUrl.value = `${baseurl}/captcha/generate?t=${timestamp}`;
 
   // 使用axios获取验证码ID，确保请求头可以正确获取
   axios.get(captchaUrl.value, {
@@ -47,26 +67,26 @@ const refreshCaptcha = () => {
 
 //登录请求
 function loginIndex() {
-  if (!form.username) {
-    ElMessage.warning('请输入用户名');
-    return;
-  }
-  if (!form.password) {
-    ElMessage.warning('请输入密码');
-    return;
-  }
-  if (!form.captcha) {
-    ElMessage.warning('请输入验证码');
-    return;
-  }
+  if (!loginFormRef.value) return;
   
-  login(form.username, form.password, rememberMe.value, form.captcha, captchaId.value, () => {
-
-    router.push('/index');
-  }, (message) => {
-    ElMessage.error('登录失败: ' + message);
-    // 登录失败时刷新验证码
-    refreshCaptcha();
+  loginFormRef.value.validate((valid) => {
+    if (valid) {
+      loading.value = true;
+      login(form.username, form.password, rememberMe.value, form.captcha, captchaId.value, 
+        () => {
+          loading.value = false;
+          router.push('/index');
+        }, 
+        (message) => {
+          loading.value = false;
+          ElMessage.error('登录失败: ' + message);
+          // 登录失败时刷新验证码
+          refreshCaptcha();
+        }
+      );
+    } else {
+      return false;
+    }
   });
 }
 
@@ -119,66 +139,70 @@ onMounted(() => {
       
       <div class="card">
         <div class="form-container">
-          <div class="form-group">
-            <label for="username">用户名</label>
-            <div class="input-wrap">
-              <span class="input-icon">👤</span>
-              <input
-                id="username"
-                type="text"
-                v-model="form.username"
-                placeholder="请输入用户名"
-                class="input-field"
-              />
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label for="password">密码</label>
-            <div class="input-wrap">
-              <span class="input-icon">🔒</span>
-              <input
-                id="password"
-                type="password"
-                v-model="form.password"
-                placeholder="请输入密码"
-                class="input-field"
-              />
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label for="captcha">验证码</label>
-            <div class="captcha-wrap">
-              <div class="input-wrap captcha-input">
-                <span class="input-icon">🔑</span>
-                <input
-                  id="captcha"
-                  type="text"
-                  v-model="form.captcha"
-                  placeholder="请输入验证码"
+          <el-form :model="form" :rules="rules" ref="loginFormRef" label-position="left" label-width="70px">
+            <el-form-item prop="username" label="用户名">
+              <div class="input-wrap">
+                <span class="input-icon">👤</span>
+                <el-input
+                  id="username"
+                  v-model="form.username"
+                  placeholder="请输入用户名"
                   class="input-field"
                 />
               </div>
-              <div class="captcha-image" @click="refreshCaptcha">
-                <img :src="captchaUrl" alt="验证码" title="点击刷新验证码" />
+            </el-form-item>
+            
+            <el-form-item prop="password" label="密码">
+              <div class="input-wrap">
+                <span class="input-icon">🔒</span>
+                <el-input
+                  id="password"
+                  type="password"
+                  v-model="form.password"
+                  placeholder="请输入密码"
+                  class="input-field"
+                  show-password
+                />
               </div>
+            </el-form-item>
+            
+            <el-form-item prop="captcha" label="验证码">
+              <div class="captcha-wrap">
+                <div class="input-wrap captcha-input">
+                  <span class="input-icon">🔑</span>
+                  <el-input
+                    id="captcha"
+                    v-model="form.captcha"
+                    placeholder="请输入验证码"
+                    class="input-field"
+                  />
+                </div>
+                <div class="captcha-image" @click="refreshCaptcha">
+                  <img :src="captchaUrl" alt="验证码" title="点击刷新验证码" />
+                </div>
+              </div>
+            </el-form-item>
+            
+            <div class="form-options">
+              <div class="remember-me">
+                <el-checkbox v-model="rememberMe" label="记住我" />
+              </div>
+              <a @click="goToResetPassword" class="forgot-password">忘记密码?</a>
             </div>
-          </div>
-          
-          <div class="form-options">
-            <div class="remember-me">
-              <input type="checkbox" id="remember" v-model="rememberMe">
-              <label for="remember">记住我</label>
+            
+            <el-button 
+              type="primary" 
+              class="login-button" 
+              @click="loginIndex" 
+              :loading="loading"
+            >
+              登录
+            </el-button>
+            
+            <div class="register-link">
+              还没有账号? <a @click="goToRegister">立即注册</a>
             </div>
-            <a @click="goToResetPassword" class="forgot-password">忘记密码?</a>
-          </div>
-          
-          <button class="login-button" @click="loginIndex">登录</button>
-          
-          <div class="register-link">
-            还没有账号? <a @click="goToRegister">立即注册</a>
-          </div>
+          </el-form>
         </div>
       </div>
       
@@ -376,17 +400,30 @@ onMounted(() => {
 
 .input-field {
   flex: 1;
-  height: 40px;
-  border: none;
+  border: none !important;
   outline: none;
+  height: 40px;
   padding: 0 12px 0 0;
   font-size: 14px;
   color: #606266;
-  background: transparent;
+  background: transparent !important;
   box-shadow: none !important;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
+}
+
+/* 覆盖Element Plus样式 */
+:deep(.el-input__wrapper) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0;
+}
+
+:deep(.el-input__inner) {
+  height: 40px;
+  border: none;
+  background-color: transparent;
 }
 
 .input-field::placeholder {
@@ -441,10 +478,6 @@ onMounted(() => {
   color: #606266;
 }
 
-.remember-me input[type="checkbox"] {
-  margin: 0;
-}
-
 .forgot-password {
   font-size: 14px;
   color: #1890ff;
@@ -459,18 +492,7 @@ onMounted(() => {
 .login-button {
   width: 100%;
   height: 40px;
-  background-color: #1890ff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.login-button:hover {
-  background-color: #40a9ff;
+  margin-bottom: 16px;
 }
 
 .register-link {
@@ -505,7 +527,7 @@ onMounted(() => {
 }
 
 .footer-links a {
-  color: #606266;
+  color: #909399;
   text-decoration: none;
 }
 
@@ -522,6 +544,19 @@ onMounted(() => {
   .content-wrapper {
     width: 100%;
   }
+}
+
+/* 调整表单项样式 */
+:deep(.el-form-item__label) {
+  color: #606266;
+  font-size: 14px;
+  line-height: 40px;
+  padding: 0;
+  text-align: left;
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 24px;
 }
 </style>
 
