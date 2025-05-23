@@ -77,6 +77,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     @Autowired
     private BeanCopyUtils beanCopyUtils;
 
+    @Override
+    public FileMapper getBaseMapper() {
+        return super.getBaseMapper();
+    }
+
     /**
      * 分页查询文件列表
      * @param query 查询参数
@@ -122,62 +127,55 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
   @Transactional(rollbackFor = Exception.class)
     @Override
     public UploadResultDto uploadFile(Integer userId, String fileId, MultipartFile file, String fileName, String filePid, String fileMd5, Integer chunkIndex, Integer chunks) throws IOException {
-        UploadResultDto Dto = new UploadResultDto();
+        File tempFileFolder = null;
         Boolean uploadSuccess = true;
-      File tmpFolder=null;
-         if(StringUtils.isEmpty(fileId)){
-             fileId=StringTools.getRandomString(Constants.LENGTH_10);//如果fileid
-
-         }
-         Dto.setFileId(fileId);
+        try {
+            UploadResultDto resultDto = new UploadResultDto();
+            if (StringTools.isEmpty(fileId)) {
+                fileId = StringTools.getRandomString(Constants.LENGTH_10);
+            }
+            resultDto.setFileId(fileId);
         Date curDate = new Date();
-        //判断是否空间足够上传
-        UserSpaceDTO spaceDTO=redisComponent.getUserSpaceUse(userId);
-        if(chunkIndex==0) {
-            FileInfoQuery fileInfoQuery = new FileInfoQuery();
-            fileInfoQuery.setFileMd5(fileMd5);
-            //只需要查询一个
-            fileInfoQuery.setStatus(FileStatusEnums.USING.getStatus());
-            // 添加文件夹类型条件，确保只查询文件而不是文件夹
-            fileInfoQuery.setFolderType(FileFolderTypeEnums.FILE.getType());
-            List<FileInfo> dbFileList = fileMapper.selectFileList(fileInfoQuery);
-            //查到了说明数据库有了，实现秒传
+            
+            // 获取用户空间使用信息
+            UserSpaceDTO spaceDto = redisComponent.getUserSpaceUse(userId);
+            
+            // 处理秒传
+            if (chunkIndex == 0) {
+                FileInfoQuery infoQuery = new FileInfoQuery();
+                infoQuery.setFileMd5(fileMd5);
+                infoQuery.setStatus(FileStatusEnums.USING.getStatus());
+                infoQuery.setFolderType(FileFolderTypeEnums.FILE.getType());
+                List<FileInfo> dbFileList = fileMapper.selectFileList(infoQuery);
+                
             if (!dbFileList.isEmpty()) {
                 FileInfo dbFile = dbFileList.get(0);
-                
-                // 再次确认是文件而不是文件夹
-                if (!FileFolderTypeEnums.FILE.getType().equals(dbFile.getFolderType())) {
-                    log.warn("尝试使用文件夹记录进行秒传，已跳过: fileMd5={}, fileId={}", fileMd5, dbFile.getFileId());
-                } else {
-                    //判断文件大小
-                    if (dbFile.getFileSize() == null) {
-                        // 如果文件大小为null，设置默认值避免空指针
-                        dbFile.setFileSize(0L);
-                    }
-                    if (dbFile.getFileSize() + spaceDTO.getUseSpace() > spaceDTO.getTotalSpace()) {
+                    // 判断空间是否足够
+                    if (dbFile.getFileSize() + spaceDto.getUseSpace() > spaceDto.getTotalSpace()) {
                         throw new BusinessException(ResponseCodeEnum.CODE_904);
                     }
+                    
+                    // 复制文件信息
                     dbFile.setFileId(fileId);
                     dbFile.setFilePid(filePid);
                     dbFile.setUserId(userId);
                     dbFile.setCreateTime(curDate);
                     dbFile.setUpdateTime(curDate);
-                    dbFile.setDelFlag(FileDelFlagEnums.USING.getFlag());
                     dbFile.setStatus(FileStatusEnums.USING.getStatus());
+                    dbFile.setDelFlag(FileDelFlagEnums.USING.getFlag());
                     dbFile.setFileMd5(fileMd5);
-                    //可能会冲突需要重新命名
+                    
+                    // 自动重命名
                     fileName = autoRename(filePid, userId, fileName);
                     dbFile.setFileName(fileName);
-                    // 确保设置正确的文件夹类型
-                    dbFile.setFolderType(FileFolderTypeEnums.FILE.getType());
+                    
                     fileMapper.insert(dbFile);
+                    resultDto.setStatus(UploadStatusEnums.UPLOAD_SECONDS.getCode());
 
-                    Dto.setStatus(UploadStatusEnums.UPLOAD_SECONDS.getCode());
-                    //更新用户空间
+                    // 更新用户空间使用
                     updateUserSpace(userId, dbFile.getFileSize());
 
-                    return Dto;
-                }
+                    return resultDto;
             }
         }
 
@@ -193,46 +191,46 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             }
         }
 
-        //判断磁盘空间
-        Long currentTempSize = redisComponent.getFileTempSize(userId, fileId);//获取临时文件大小
-        if (fileSize + currentTempSize > spaceDTO.getTotalSpace()) {
-            throw new BusinessException(ResponseCodeEnum.CODE_904);
-        }
-        //暂存临时目录
+            // 创建临时目录
         String tempFolderName = appConfig.getProjectFolder() + Constants.FILE_FOLDER_TEMP;
         String currentUserFolderName = userId + fileId;
-
-        tmpFolder = new File(tempFolderName + currentUserFolderName);
-        if (!tmpFolder.exists()) {
-            tmpFolder.mkdirs();
-        }
-        
-        // 修复了文件路径问题，确保分片文件保存在临时文件夹内
-        File newFile = new File(tmpFolder.getPath() + "/" + chunkIndex);
-        try {
-            file.transferTo(newFile);
-            // 保存准确的文件大小
-            redisComponent.saveFileTempSize(userId, fileId, fileSize);
-            if (chunkIndex < chunks - 1) {//不是最后一片
-                Dto.setStatus(UploadStatusEnums.UPLOADING.getCode());
-                return Dto;
+            tempFileFolder = new File(tempFolderName + currentUserFolderName);
+            if (!tempFileFolder.exists()) {
+                tempFileFolder.mkdirs();
             }
-
-            //如果是最后一个分片，上传数据库，然后异步合并
-            String month = DateUtils.format(new Date(), DateTimePatternEnum.YYYYMM.getPattern());
-            //文件的后缀
+            
+            // 判断用户空间是否足够
+            Long currentTempSize = redisComponent.getFileTempSize(userId, fileId);
+            if (fileSize + currentTempSize + spaceDto.getUseSpace() > spaceDto.getTotalSpace()) {
+                throw new BusinessException(ResponseCodeEnum.CODE_904);
+            }
+            
+            // 保存分片文件
+            File newFile = new File(tempFileFolder.getPath() + "/" + chunkIndex);
+            file.transferTo(newFile);
+            redisComponent.saveFileTempSize(userId, fileId, fileSize);
+            
+            // 如果不是最后一个分片，返回上传中状态
+            if (chunkIndex < chunks - 1) {
+                resultDto.setStatus(UploadStatusEnums.UPLOADING.getCode());
+                return resultDto;
+            }
+            
+            // 处理最后一个分片
+            String month = DateUtils.format(curDate, DateTimePatternEnum.YYYYMM.getPattern());
             String fileSuffix = StringTools.getFileSuffix(fileName);
-            //真实文件名
             String realFileName = currentUserFolderName + fileSuffix;
-            //通过后缀获取文件类型
             FileTypeEnums fileType = FileTypeEnums.getFileTypeBySuffix(fileSuffix);
-            //自动重命名
+            
+            // 自动重命名
             fileName = autoRename(filePid, userId, fileName);
+            
+            // 创建文件信息
             FileInfo fileInfo = new FileInfo();
             fileInfo.setFileId(fileId);
+            fileInfo.setUserId(userId);
             fileInfo.setFileMd5(fileMd5);
             fileInfo.setFileName(fileName);
-            fileInfo.setUserId(userId);
             fileInfo.setFilePath(month + "/" + realFileName);
             fileInfo.setFilePid(filePid);
             fileInfo.setCreateTime(curDate);
@@ -240,25 +238,25 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             fileInfo.setFileCategory(fileType.getCategory().getCategory());
             fileInfo.setFileType(fileType.getType());
             fileInfo.setStatus(FileStatusEnums.TRANSFER.getStatus());
-            // 确保设置正确的文件夹类型
             fileInfo.setFolderType(FileFolderTypeEnums.FILE.getType());
             fileInfo.setDelFlag(FileDelFlagEnums.USING.getFlag());
 
             // 设置文件大小，避免空指针异常
             Long totalSize = redisComponent.getFileTempSize(userId, fileId);
             if (totalSize <= 0) {
-                // 如果从Redis获取的大小无效，使用计算的文件大小
                 totalSize = fileSize * chunks; // 估算总大小
                 log.info("从Redis获取的文件大小无效，使用估算值: {}", totalSize);
             }
             fileInfo.setFileSize(totalSize);
 
-            this.fileMapper.insert(fileInfo);
+            fileMapper.insert(fileInfo);
+            
+            // 更新用户空间使用
             updateUserSpace(userId, totalSize);
-            Dto.setStatus(UploadStatusEnums.UPLOAD_FINISH.getCode());
-            //做一个异步操作，转码
 
-            //事务提交后调用异步方法
+            resultDto.setStatus(UploadStatusEnums.UPLOAD_FINISH.getCode());
+            
+            // 事务提交后进行异步文件转码
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -266,80 +264,62 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
                 }
             });
 
-            return Dto;
+            return resultDto;
+            
         } catch (BusinessException e) {
-            log.error("文件上传失败", e);
             uploadSuccess = false;
+            log.error("文件上传失败", e);
             throw e;
         } catch (Exception e) {
-            log.error("文件上传时发生异常", e);
             uploadSuccess = false;
+            log.error("文件上传失败", e);
             throw new BusinessException(ResponseCodeEnum.CODE_500.getMsg() + ":" + e.getMessage());
         } finally {
-            if (!uploadSuccess && tmpFolder != null) {
+            if (!uploadSuccess && tempFileFolder != null) {
                 try {
-                    FileUtils.deleteDirectory(tmpFolder);
+                    FileUtils.deleteDirectory(tempFileFolder);
                 } catch (IOException e) {
-                    log.error("文件删除临时目录失败", e);
+                    log.error("删除临时目录失败", e);
                 }
             }
         }
     }
      //打开文件
     @Override
-    public void getFIle(HttpServletResponse response, String fileId, Integer userId) throws IOException {
-
-        String filePath=null;
-        if(fileId.endsWith(".ts")){
-            String []tsArray=fileId.split("_");
-            String realFileId=tsArray[0];
-            FileInfo fileInfo=fileMapper.selectByFileIdAndUserId(fileId,userId);
-            if(fileInfo==null){
+    public void getFIle(HttpServletRequest request,HttpServletResponse response, String fileId, Integer userId) throws IOException {
+        String filePath = null;
+        if (fileId.endsWith(".ts")) {
+            String[] tsArray = fileId.split("_");
+            String realFileId = tsArray[0];
+            FileInfo fileInfo = fileMapper.selectByFileIdAndUserId(realFileId, userId);
+            if (fileInfo == null) {
                 return;
             }
-            String fileName=fileInfo.getFilePath();
-            fileName=StringTools.getFileNameNoSuffix(fileName)+"/"+fileId;
-            filePath=appConfig.getProjectFolder()+Constants.FILE_FOLDER_FILE+fileName;
-        }else{
-            FileInfo fileInfo=fileMapper.selectByFileIdAndUserId(fileId,userId);
-            if(fileInfo==null){
+            String fileName = fileInfo.getFilePath();
+            fileName = StringTools.getFileNameNoSuffix(fileName) + "/" + fileId;
+            filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileName;
+            readFile(response, null, filePath);
+        } else {
+            FileInfo fileInfo = fileMapper.selectByFileIdAndUserId(fileId, userId);
+            if (fileInfo == null) {
                 return;
             }
-            //判断一下文件类型1
-            if(FileCategoryEnums.VIDEO.getCategory().equals(fileInfo.getFileCategory())){
-                String fileNameNoSuffix=StringTools.getFileNameNoSuffix(fileInfo.getFilePath());//获得无后缀的地址
-                filePath=appConfig.getProjectFolder()+Constants.FILE_FOLDER_FILE+fileNameNoSuffix+"/"+Constants.M3U8_NAME;
-                File file=new File(filePath);
-                if(!file.exists()){
+            //判断一下文件类型
+            if (FileCategoryEnums.VIDEO.getCategory().equals(fileInfo.getFileCategory())) {
+                String fileNameNoSuffix = StringTools.getFileNameNoSuffix(fileInfo.getFilePath());//获得无后缀的地址
+                filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileNameNoSuffix + "/" + Constants.M3U8_NAME;
+//                filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileInfo.getFilePath();
+                File file = new File(filePath);
+                if (!file.exists()) {
                     return;
                 }
-                readFile(response,filePath);
-            }else{
-
+                readFile(response, filePath);
+            } else {
                 //直接读
-                filePath =appConfig.getProjectFolder()+Constants.FILE_FOLDER_FILE+fileInfo.getFilePath();
-                if (filePath.endsWith(".pptx")) {
-                    File pptFile = new File(filePath);
-                    if (!pptFile.exists()) return;
-
-                    File pdfFile = File.createTempFile("converted-", ".pdf");
-                    try {
-                        PptxToPdfConverter.convertPptxToPdf(pptFile, pdfFile);
-                        readFile(response, pdfFile.getAbsolutePath());
-                    } catch (Exception e) {
-                        logger.error("PPT 转 PDF 失败", e);
-                        response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "PPT 转换失败");
-                    } finally {
-                        pdfFile.delete(); // 删除临时文件
-                    }
-                } else {
-                    // 其它文件直接返回
-                    readFile(response, filePath);
-                }
-
+                filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileInfo.getFilePath();
+                readFile(response, request, filePath);
             }
         }
-
     }
    //创建新文件
     @Override
@@ -635,7 +615,6 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     }
 
     @Override
-
        public void download(HttpServletRequest request, HttpServletResponse response, String code) throws UnsupportedEncodingException {
             DownloadFileDto downloadFileDto = redisComponent.getDownloadCode(code);
             if (null == downloadFileDto) {
@@ -650,7 +629,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
                 fileName = new String(fileName.getBytes("UTF-8"), "ISO8859-1");
             }
             response.setHeader("Content-Disposition", "attachment;filename=\"" + fileName + "\"");
-            readFile(response, filePath);
+        readFile(response, request, filePath);
         }
 
     @Override
@@ -1251,7 +1230,6 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
         new File(tsPath).delete();
     }
 
-
     protected void readFile(HttpServletResponse response, String filePath) {
         if (!StringTools.pathIsOk(filePath)) {
             return;
@@ -1263,17 +1241,6 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             if (!file.exists()) {
                 return;
             }
-            // 获取文件类型（扩展名）
-            String fileName = file.getName().toLowerCase();
-            if (fileName.endsWith(".pdf")) {
-                response.setContentType("application/pdf");
-                response.setHeader("Content-Disposition", "inline; filename=" + fileName);
-            } else if (fileName.endsWith(".ts")) {
-                response.setContentType("video/mp2t");
-            }else {
-                response.setContentType("application/octet-stream");
-            }
-
             in = new FileInputStream(file);
             byte[] byteData = new byte[1024];
             out = response.getOutputStream();
@@ -1301,6 +1268,170 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             }
         }
     }
+    protected void readFile(HttpServletResponse response, HttpServletRequest request, String filePath) {
+        if (!StringTools.pathIsOk(filePath)) {
+            return;
+        }
+
+        File file = new File(filePath);
+        if (!file.exists()) {
+            return;
+        }
+
+        // 获取文件类型（扩展名）
+        String fileName = file.getName().toLowerCase();
+
+        // 设置跨域响应头，解决跨域问题
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Range, If-Modified-Since, If-None-Match");
+        response.setHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type");
+        response.setHeader("Access-Control-Max-Age", "3600");
+
+        // 设置支持断点续传的响应头
+        response.setHeader("Accept-Ranges", "bytes");
+
+        // 根据文件类型设置正确的Content-Type
+        boolean isVideo = fileName.endsWith(".mp4") || fileName.endsWith(".ts");
+        
+        if (fileName.endsWith(".m3u8")) {
+            response.setContentType("application/vnd.apple.mpegurl");
+            // m3u8文件不缓存
+            response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            response.setHeader("Pragma", "no-cache");
+            response.setHeader("Expires", "0");
+        } else if (fileName.endsWith(".ts")) {
+            response.setContentType("video/mp2t");
+            response.setHeader("Cache-Control", "public, max-age=31536000");
+        } else if (fileName.endsWith(".mp4")) {
+            response.setContentType("video/mp4");
+            response.setHeader("Cache-Control", "public, max-age=31536000");
+        } else if (fileName.endsWith(".pdf")) {
+            response.setContentType("application/pdf");
+            response.setHeader("Content-Disposition", "inline; filename=" + fileName);
+        } else if (fileName.endsWith(".pptx")) {
+            response.setContentType("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+            response.setHeader("Content-Disposition", "inline; filename=" + fileName);
+        } else {
+            response.setContentType("application/octet-stream");
+        }
+        
+        if (isVideo) {
+            // 视频文件的额外响应头
+            response.setHeader("Accept-Ranges", "bytes");
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            response.setHeader("Connection", "keep-alive");
+        }
+
+        // 获取文件长度
+        long fileLength = file.length();
+        String rangeHeader = request != null ? request.getHeader("Range") : null;
+        long startByte = 0;
+        long endByte = fileLength - 1;
+
+        if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+            try {
+                String[] ranges = rangeHeader.substring("bytes=".length()).split("-");
+                
+                // 处理起始字节
+                if (!ranges[0].isEmpty()) {
+                    try {
+                        startByte = Long.parseLong(ranges[0]);
+                    } catch (NumberFormatException e) {
+                        startByte = 0;
+                    }
+                }
+                
+                // 处理结束字节
+                if (ranges.length > 1 && !ranges[1].isEmpty()) {
+                    try {
+                        endByte = Long.parseLong(ranges[1]);
+                    } catch (NumberFormatException e) {
+                        endByte = fileLength - 1;
+                    }
+                } else if (isVideo) {
+                    // 对于视频文件，如果没有指定结束字节，限制每次返回的大小
+                    endByte = Math.min(startByte + (2 * 1024 * 1024), fileLength - 1); // 每次返回2MB
+                }
+
+                // 处理负数范围（例如：bytes=-500）
+                if (ranges[0].isEmpty() && ranges.length > 1 && !ranges[1].isEmpty()) {
+                    try {
+                        long length = Long.parseLong(ranges[1]);
+                        startByte = Math.max(0, fileLength - length);
+                        endByte = fileLength - 1;
+                    } catch (NumberFormatException e) {
+                        startByte = 0;
+                        endByte = fileLength - 1;
+                    }
+                }
+
+                // 验证和调整范围的有效性
+                if (startByte < 0) startByte = 0;
+                if (endByte >= fileLength) endByte = fileLength - 1;
+                
+                // 如果起始位置超过文件长度，返回 416
+                if (startByte >= fileLength) {
+                    response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                    response.setHeader("Content-Range", "bytes */" + fileLength);
+                    return;
+                }
+
+                // 如果结束位置小于起始位置，返回 416
+                if (endByte < startByte) {
+                    response.setStatus(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+                    response.setHeader("Content-Range", "bytes */" + fileLength);
+                    return;
+                }
+
+                // 限制单次传输的最大大小
+                if (isVideo && (endByte - startByte) > (10 * 1024 * 1024)) { // 最大10MB
+                    endByte = startByte + (10 * 1024 * 1024) - 1;
+                }
+
+                // 设置206状态码（部分内容）
+                response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+                response.setHeader("Content-Range", "bytes " + startByte + "-" + endByte + "/" + fileLength);
+                response.setHeader("Content-Length", String.valueOf(endByte - startByte + 1));
+            } catch (Exception e) {
+                logger.error("处理Range请求异常", e);
+                // 如果解析Range失败，返回整个文件
+                startByte = 0;
+                endByte = fileLength - 1;
+                response.setHeader("Content-Length", String.valueOf(fileLength));
+            }
+        } else {
+            // 不是Range请求，返回整个文件
+            response.setHeader("Content-Length", String.valueOf(fileLength));
+        }
+
+                    // 使用缓冲流提高性能
+            try (BufferedOutputStream out = new BufferedOutputStream(response.getOutputStream(), 32768); // 32KB 输出缓冲
+                 RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
+                
+                randomAccessFile.seek(startByte);
+                byte[] buffer = new byte[32768]; // 32KB 读取缓冲
+                long bytesToRead = endByte - startByte + 1;
+                int bytesRead;
+
+                while (bytesToRead > 0 && (bytesRead = randomAccessFile.read(buffer, 0, (int) Math.min(buffer.length, bytesToRead))) != -1) {
+                    out.write(buffer, 0, bytesRead);
+                    bytesToRead -= bytesRead;
+                    
+                    // 对于视频文件，定期刷新缓冲区以确保流畅播放
+                    if (isVideo && bytesToRead % (128 * 1024) == 0) { // 每128KB刷新一次
+                        out.flush();
+                    }
+                }
+                out.flush();
+            } catch (Exception e) {
+                logger.error("读取文件异常: {}", e.getMessage(), e);
+                if (!response.isCommitted()) {
+                    response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                }
+            }
+    }
+
 
     @Transactional(rollbackFor = Exception.class)
     @Override

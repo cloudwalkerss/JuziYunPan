@@ -258,14 +258,14 @@ public class FileController {
 //    }
 
     @RequestMapping("/ts/getVideoInfo/{fileId}")
-    public void getVideoInfo(HttpServletResponse response, @RequestAttribute(Const.ATTR_USER_ID) Integer userId, @PathVariable("fileId") String fileId) throws IOException {
+    public void getVideoInfo(HttpServletRequest request,HttpServletResponse response, @RequestAttribute(Const.ATTR_USER_ID) Integer userId, @PathVariable("fileId") String fileId) throws IOException {
 
-        fileService.getFIle(response, fileId, userId);
+        fileService.getFIle(request,response, fileId, userId);
     }
 
     @RequestMapping("/getFile/{fileId}")
-    public void getFile(@RequestAttribute(Const.ATTR_USER_ID) Integer userId, HttpServletResponse response, @PathVariable("fileId") String fileId) throws IOException {
-         fileService.getFIle(response,fileId, userId);
+    public void getFile(@RequestAttribute(Const.ATTR_USER_ID) Integer userId,HttpServletRequest request, HttpServletResponse response, @PathVariable("fileId") String fileId) throws IOException {
+         fileService.getFIle(request,response,fileId, userId);
 
 
 

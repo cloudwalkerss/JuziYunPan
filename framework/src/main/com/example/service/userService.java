@@ -31,7 +31,7 @@ public interface userService extends IService<Account> {
 
     RestBean<Void> logout( String authorization);
 
-    void getavatar(HttpServletResponse response, Integer userId);
+   void getavatar(HttpServletResponse response, Integer userId);
 
     RestBean getuserinfo(Integer userId);
 

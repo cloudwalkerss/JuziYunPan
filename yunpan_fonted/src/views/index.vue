@@ -8,10 +8,12 @@ import axios from 'axios';
 import {userStore} from "@/store/index.js";
 import { UploadFilled, Document, Folder, Delete, Share, Edit, Download, Close } from '@element-plus/icons-vue';
 import PreviewImage from '@/components/PreviewImage.vue';
-import PreviewVideo from '@/components/PreviewVideo.vue';
 import PreviewAudio from '@/components/PreviewAudio.vue';
 import DocxPreview from '@/components/DocxPreview.vue';
 import PreviewPdf from '@/components/PreviewPdf.vue';
+import PdfPreview from '../components/PdfPreview.vue';
+import PptxPreview from '../components/PptxPreview.vue';
+import VideoPreview from '../components/VideoPreview.vue';
 
 // 用户信息
 const userInfo = ref(null);
@@ -121,17 +123,17 @@ const userSpace = ref({
 
 // 预览相关状态
 const previewDialogVisible = ref(false);
-const previewFileType = ref(''); // image, video, audio, doc
+const previewFileType = ref(''); // image, video, audio, doc, pdf, pptx
 const previewImageUrl = ref('');
-const previewVideoUrl = ref('');
 const previewAudioUrl = ref('');
 const previewDocUrl = ref('');
 const previewDocName = ref('');
 const previewDocId = ref('');
 const previewPdfUrl = ref('');
+const previewPptxId = ref('');
+const previewVideoFileId = ref('');
 let previewImageObjectUrl = null;
 let previewAudioObjectUrl = null;
-let previewVideoObjectUrl = null;
 
 // 加载文件列表
 function loadFileList() {
@@ -972,11 +974,18 @@ async function handleFilePreview(row) {
   const fileName = row.fileName || '';
   const fileType = row.fileType;
   const fileCategory = row.fileCategory;
+  
   // 关闭前释放旧的objectURL
   if (previewImageObjectUrl) { URL.revokeObjectURL(previewImageObjectUrl); previewImageObjectUrl = null; }
   if (previewAudioObjectUrl) { URL.revokeObjectURL(previewAudioObjectUrl); previewAudioObjectUrl = null; }
-  if (previewVideoObjectUrl) { URL.revokeObjectURL(previewVideoObjectUrl); previewVideoObjectUrl = null; }
 
+  // 视频
+  if (fileCategory === 1 || fileType === 1 || /\.(mp4|webm|ogg|mkv|mov|avi)$/i.test(fileName)) {
+    previewFileType.value = 'video';
+    previewVideoFileId.value = row.fileId;
+    previewDialogVisible.value = true;
+    return;
+  }
   // 图片
   if (fileCategory === 3 || fileType === 3 || /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName)) {
     try {
@@ -988,21 +997,6 @@ async function handleFilePreview(row) {
     } catch (e) {
       previewImageUrl.value = '';
       previewFileType.value = 'image';
-      previewDialogVisible.value = true;
-    }
-    return;
-  }
-  // 视频
-  if (fileCategory === 1 || fileType === 1 || /\.(mp4|webm|ogg|mkv|mov|avi)$/i.test(fileName)) {
-    try {
-      const response = await axios.get(`/file/getFile/${row.fileId}`, { responseType: 'blob', headers: getHeader() });
-      previewVideoObjectUrl = URL.createObjectURL(response.data);
-      previewVideoUrl.value = previewVideoObjectUrl;
-      previewFileType.value = 'video';
-      previewDialogVisible.value = true;
-    } catch (e) {
-      previewVideoUrl.value = '';
-      previewFileType.value = 'video';
       previewDialogVisible.value = true;
     }
     return;
@@ -1022,6 +1016,13 @@ async function handleFilePreview(row) {
     }
     return;
   }
+  // PDF文件
+  if (/\.pdf$/i.test(fileName)) {
+    previewPdfUrl.value = `/file/getFile/${row.fileId}`;
+    previewFileType.value = 'pdf';
+    previewDialogVisible.value = true;
+    return;
+  }
   // doc/docx
   if (/\.(doc|docx)$/i.test(fileName)) {
     previewDocId.value = row.fileId;
@@ -1029,10 +1030,10 @@ async function handleFilePreview(row) {
     previewDialogVisible.value = true;
     return;
   }
-  // pdf/ppt/pptx
-  if (/\.(pdf|ppt|pptx)$/i.test(fileName)) {
-    previewPdfUrl.value = `/file/previewPdf/${row.fileId}`;
-    previewFileType.value = 'pdf';
+  // ppt/pptx
+  if (/\.(ppt|pptx)$/i.test(fileName)) {
+    previewPptxId.value = row.fileId;
+    previewFileType.value = 'pptx';
     previewDialogVisible.value = true;
     return;
   }
@@ -1046,11 +1047,11 @@ watch(previewDialogVisible, (val) => {
   if (!val) {
     if (previewImageObjectUrl) { URL.revokeObjectURL(previewImageObjectUrl); previewImageObjectUrl = null; previewImageUrl.value = ''; }
     if (previewAudioObjectUrl) { URL.revokeObjectURL(previewAudioObjectUrl); previewAudioObjectUrl = null; previewAudioUrl.value = ''; }
-    if (previewVideoObjectUrl) { URL.revokeObjectURL(previewVideoObjectUrl); previewVideoObjectUrl = null; previewVideoUrl.value = ''; }
     previewDocUrl.value = '';
     previewDocName.value = '';
     previewDocId.value = '';
     previewPdfUrl.value = '';
+    previewPptxId.value = '';
   }
 });
 </script>
@@ -1417,14 +1418,46 @@ watch(previewDialogVisible, (val) => {
           </template>
         </el-dialog>
         
-        <!-- 图片/视频/音频/文档预览弹窗 -->
-        <el-dialog v-model="previewDialogVisible" width="80vw" top="5vh" :show-close="true" title="文件预览">
-          <PreviewImage v-if="previewFileType==='image'" :url="previewImageUrl" />
-          <PreviewVideo v-else-if="previewFileType==='video'" :url="previewVideoUrl" />
-          <PreviewAudio v-else-if="previewFileType==='audio'" :url="previewAudioUrl" />
-          <DocxPreview v-else-if="previewFileType==='docx'" :file-id="previewDocId" />
-          <PreviewPdf v-else-if="previewFileType==='pdf'" :url="previewPdfUrl" />
-          <div v-else style="text-align:center;padding:40px 0;color:#f56c6c;">暂不支持该文件类型在线预览</div>
+        <!-- 文件预览对话框 -->
+        <el-dialog
+          v-model="previewDialogVisible"
+          :title="'预览 - ' + currentFile?.fileName"
+          width="80%"
+          :destroy-on-close="true"
+          class="preview-dialog"
+        >
+          <template v-if="previewFileType === 'video'">
+            <div class="video-preview-container">
+              <VideoPreview :fileId="previewVideoFileId" />
+            </div>
+          </template>
+          <template v-if="previewFileType === 'image'">
+            <div class="image-preview-container">
+            <el-image :src="previewImageUrl" fit="contain" />
+          </div>
+          </template>
+          <template v-if="previewFileType === 'audio'">
+            <div class="audio-preview-container">
+            <audio :src="previewAudioUrl" controls style="width: 100%;">
+              您的浏览器不支持音频播放
+            </audio>
+          </div>
+          </template>
+          <template v-if="previewFileType === 'pdf'">
+            <div class="pdf-preview-container">
+            <PdfPreview :fileUrl="previewPdfUrl" />
+          </div>
+          </template>
+          <template v-if="previewFileType === 'pptx'">
+            <div class="pptx-preview-container">
+            <PptxPreview :fileId="previewPptxId" />
+          </div>
+          </template>
+          <template v-if="previewFileType === 'docx'">
+            <div class="docx-preview-container">
+            <DocxPreview :fileId="previewDocId" />
+          </div>
+          </template>
         </el-dialog>
       </el-main>
     </div>
@@ -1725,5 +1758,57 @@ watch(previewDialogVisible, (val) => {
 
 .selected-folder .el-icon {
   color: #409EFF;
+}
+
+.preview-dialog :deep(.el-dialog__body) {
+  padding: 0;
+  height: 80vh;
+  overflow: hidden;
+}
+
+.image-preview-container {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+}
+
+.audio-preview-container {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+}
+
+.pdf-preview-container {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+}
+
+.pptx-preview-container {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+}
+
+.docx-preview-container {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f2f5;
+}
+
+.video-preview-container {
+  width: 100%;
+  height: 600px;
+  background-color: #000;
 }
 </style>

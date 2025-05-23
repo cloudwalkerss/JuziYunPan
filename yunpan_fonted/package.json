@@ -11,10 +11,14 @@
   "dependencies": {
     "ant-design-vue": "^4.2.6",
     "axios": "^1.8.4",
+    "dplayer": "^1.27.1",
     "element-plus": "^2.9.7",
+    "hls.js": "^1.6.2",
+    "jszip": "^3.10.1",
     "mammoth": "^1.9.0",
     "pdfjs-dist": "^5.2.133",
     "pinia": "^3.0.2",
+    "plyr": "^3.7.8",
     "vue": "^3.5.13",
     "vue-pdf-embed": "^2.1.2",
     "vue-router": "^4.5.0"

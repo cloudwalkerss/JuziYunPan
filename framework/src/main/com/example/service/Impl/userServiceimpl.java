@@ -325,7 +325,7 @@ public class userServiceimpl extends ServiceImpl<UserMapper, Account> implements
             avatarPath = appConfig.getProjectFolder() + avatarFolderName + Constants.AVATAR_DEFUALT;
         }
         response.setContentType("image/jpg");
-        fileService.readFile(response, avatarPath);
+        fileService.readFile(response, null, avatarPath);
     }
     private void printNoDefaultImage(HttpServletResponse response) {
         response.setHeader(CONTENT_TYPE, CONTENT_TYPE_VALUE);

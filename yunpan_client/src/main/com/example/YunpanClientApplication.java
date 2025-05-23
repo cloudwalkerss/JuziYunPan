@@ -10,6 +10,7 @@ import org.springframework.context.annotation.ComponentScan;
 public class YunpanClientApplication {
 
     public static void main(String[] args) {
+
         SpringApplication.run(YunpanClientApplication.class, args);
     }
 

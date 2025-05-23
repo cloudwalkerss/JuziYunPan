@@ -40,7 +40,7 @@ public interface FileService extends IService<FileInfo> {
      */
     UploadResultDto uploadFile(Integer userId, FileUploadVO uploadVO) throws IOException;
 
-    public  void getFIle(HttpServletResponse response, String fileId,Integer userId) throws IOException;
+    public  void getFIle(HttpServletRequest request,HttpServletResponse response, String fileId,Integer userId) throws IOException;
 
     RestBean newFolder(Integer userId, createFolderVo vo);
 

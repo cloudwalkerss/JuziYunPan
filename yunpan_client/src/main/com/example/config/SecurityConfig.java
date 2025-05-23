@@ -19,11 +19,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-       @Autowired
-       CustomAuthenticationProvider customAuthenticationProvider;
+    @Autowired
+    CustomAuthenticationProvider customAuthenticationProvider;
 
-       @Autowired
+    @Autowired
     JwtAuthenticationFilter jwtAuthenticationFilter;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -37,7 +38,7 @@ public class SecurityConfig {
                 // 将自定义CORS过滤器添加到Security过滤器链的最前面
 
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-             //对于登录请求我们不予以拦截
+                //对于登录请求我们不予以拦截
                 .authorizeHttpRequests(conf -> conf
                         .requestMatchers(
                                 "/user/register",
@@ -47,19 +48,15 @@ public class SecurityConfig {
                                 "/user/ask-code/**",     // 获取验证码接口
                                 "/user/resetConfirm/**", // 验证验证码有效性接口
                                 "/user/resetPassword/**" // 重置密码接口
-                                  ,"/user/getAvatar/**"
+                                , "/user/getAvatar/**"
+                                ,"/file/ts/**"
 
                         ).permitAll()  // 多个路径
                         .anyRequest().authenticated()
                 );
 
 
-
-
-
 //                .requestMatchers("/auth/login", "/auth/register").permitAll()
-
-
 
 
         return http.build();

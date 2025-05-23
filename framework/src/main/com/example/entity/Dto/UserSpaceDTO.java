@@ -1,12 +1,15 @@
 package com.example.entity.Dto;
 
 import lombok.Data;
+import java.io.Serializable;
 
 /**
  * 用户空间使用情况DTO
  */
 @Data
-public class UserSpaceDTO {
+public class UserSpaceDTO implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
     /**
      * 用户ID
      */

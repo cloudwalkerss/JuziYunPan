@@ -17,6 +17,7 @@ import com.example.service.UserAdminService;
 import com.example.utils.BeanCopyUtils;
 import io.lettuce.core.support.caching.CacheAccessor;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,10 +26,11 @@ import java.util.List;
 @Service
 public class UserAdiminServiceImpl extends ServiceImpl<UserMapper, Account> implements UserAdminService {
 
-
+@Autowired
     private  UserMapper userMapper;
+    @Autowired
     BeanCopyUtils beanCopyUtils;
-
+@Autowired
     RedisComponent redisComponent;
 
 

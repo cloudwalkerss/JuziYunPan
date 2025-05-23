@@ -286,7 +286,7 @@ public class WebShareController {
             }
 
             // 调用文件服务获取文件
-            fileService.getFIle(response, fileId, shareUserId);
+            fileService.getFIle(request,response, fileId, shareUserId);
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
@@ -332,7 +332,7 @@ public class WebShareController {
             }
 
             // 调用文件服务获取视频信息
-            fileService.getFIle(response, fileId, shareUserId);
+            fileService.getFIle(request,response, fileId, shareUserId);
         } catch (Exception e) {
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
