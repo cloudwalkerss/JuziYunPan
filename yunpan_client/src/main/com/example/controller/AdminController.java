@@ -2,10 +2,10 @@ package com.example.controller;
 
 
 import com.example.component.RedisComponent;
+import com.example.entity.Dto.SysSettingsDto;
 import com.example.entity.Enum.FileDelFlagEnums;
 import com.example.entity.RestBean;
-import com.example.entity.Vo.request.FileInfoQuery;
-import com.example.entity.Vo.request.UserAdminQuery;
+import com.example.entity.Vo.request.*;
 
 import com.example.entity.Vo.response.PaginationResultVO;
 import com.example.service.FileService;
@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
 
 @RestController("adminController")
 @RequestMapping("/admin")
@@ -36,11 +38,20 @@ public class AdminController  {
     @Autowired
     private UserAdminService userAdminService;
 
-     //更改邮箱信息
+
     @RequestMapping("/getSysSettings")
     public RestBean getSysSettings() {
         return RestBean.success(
                 redisComponent.getSysSettingsDto());
+    }
+
+    @RequestMapping("/saveSysSettings")
+    public RestBean saveSysSettings(
+          @RequestBody SysSettingsDto vo) {
+        SysSettingsDto sysSettingsDto = new SysSettingsDto();
+        sysSettingsDto.setUserInitUseSpace(vo.getUserInitUseSpace());
+        redisComponent.saveSysSettingsDto(sysSettingsDto);
+        return RestBean.success();
     }
 
 
@@ -56,14 +67,14 @@ public class AdminController  {
 
     @RequestMapping("/updateUserStatus")
 
-    public RestBean updateUserStatus(Integer userId,  Integer status) {
-        userAdminService.updateUserStatus(userId, status);
+    public RestBean updateUserStatus(@RequestBody updateUserStaus updateUserStaus) {
+        userAdminService.updateUserStatus(updateUserStaus.getUserId(),updateUserStaus.getBanned());
         return RestBean.success();
     }
 
     @RequestMapping("/updateUserSpace")
-    public RestBean  updateUserSpace( Integer userId,  Integer changeSpace) {
-        userAdminService.changeUserSpace(userId, changeSpace);
+    public RestBean  updateUserSpace(@RequestBody updateUserSpaceVo vo) {
+        userAdminService.changeUserSpace(vo.getUserId(), vo.getTotalSpace());
 
         return RestBean.success();
     }
@@ -75,11 +86,11 @@ public class AdminController  {
      * @return
      */
     @RequestMapping("/loadFileList")
-
-    public RestBean loadDataList(FileInfoQuery query) {
+    public RestBean loadDataList(@RequestBody FileInfoQuery query) {
         query.setOrderBy("update_time desc");
         query.setQueryNickName(true);
         query.setDelFlag(FileDelFlagEnums.USING.getFlag());
+        query.setFolderType(0);
         PaginationResultVO resultVO = fileInfoService.findListByPage(query);
         return RestBean.success(resultVO);
     }
@@ -93,18 +104,18 @@ public class AdminController  {
     @RequestMapping("/getFile/{userId}/{fileId}")
 
     public void getFile(HttpServletRequest request, HttpServletResponse response,
-                        @PathVariable("userId")String userId,
-                        @PathVariable("fileId") String fileId) {
-         userAdminService.getfile(response,fileId,userId);
+                        @PathVariable("userId")Integer userId,
+                        @PathVariable("fileId") String fileId) throws IOException {
+         fileInfoService.getFIle(request,response,fileId,userId);
     }
 
 
     @RequestMapping("/ts/getVideoInfo/{userId}/{fileId}")
 
     public void getVideoInfo(HttpServletRequest request, HttpServletResponse response,
-                             String userId,
-                            String fileId) {
-        getFile(request, response, fileId, userId);
+                             @PathVariable("userId")Integer userId,
+                             @PathVariable("fileId") String fileId) throws IOException {
+       fileInfoService.getFIle(request, response, fileId,userId);
     }
 
     @RequestMapping("/createDownloadUrl/{userId}/{fileId}")
@@ -132,8 +143,8 @@ public class AdminController  {
 
     @RequestMapping("/delFile")
 
-    public RestBean delFile( String fileIdAndUserIds) {
-        String[] fileIdAndUserIdArray = fileIdAndUserIds.split(",");
+    public RestBean delFile(@RequestBody AdminDeleteFileVo vo ) {
+        String[] fileIdAndUserIdArray = vo.getFileIdAndUserIds().split(",");
         for (String fileIdAndUserId : fileIdAndUserIdArray) {
             String[] itemArray = fileIdAndUserId.split("_");
             fileInfoService.delFileBatch(Integer.valueOf(itemArray[0]), itemArray[1], true);

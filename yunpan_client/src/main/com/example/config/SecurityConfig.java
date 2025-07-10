@@ -49,7 +49,7 @@ public class SecurityConfig {
                                 "/user/resetConfirm/**", // 验证验证码有效性接口
                                 "/user/resetPassword/**" // 重置密码接口
                                 , "/user/getAvatar/**"
-                                ,"/file/ts/**"
+                                ,"file/getImage/**","showShare/**"
 
                         ).permitAll()  // 多个路径
                         .anyRequest().authenticated()

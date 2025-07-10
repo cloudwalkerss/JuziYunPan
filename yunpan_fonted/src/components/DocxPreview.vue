@@ -47,8 +47,22 @@ export default {
         this.loading = true
         this.error = null
         
-        // 获取文件（去掉/api前缀）
-        const response = await fetch(`http://localhost:8080/file/getFile/${this.fileId}`, {
+        // 检查fileId格式，判断是否包含userId（管理员界面传入的格式为userId/fileId）
+        let url = '';
+        // 获取token
+        const headers = getHeader();
+        const token = headers.Authorization ? headers.Authorization.split(' ')[1] : '';
+        
+        if (this.fileId.includes('/')) {
+          // 管理员界面格式：userId/fileId
+          url = `/admin/getFile/${this.fileId}`;
+        } else {
+          // 用户界面格式：fileId
+          url = `/file/getFile/${this.fileId}`;
+        }
+        
+        // 获取文件
+        const response = await fetch(url, {
           headers: {
             ...getHeader()
           }

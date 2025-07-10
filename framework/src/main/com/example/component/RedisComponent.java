@@ -1,6 +1,7 @@
 package com.example.component;
 
 import com.alibaba.fastjson2.JSON;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.constants.Constants;
 import com.example.entity.Dto.Account;
 import com.example.entity.Dto.DownloadFileDto;
@@ -64,6 +65,8 @@ public class RedisComponent {
         // 查询用户已使用空间
         Long useSpace = fileMapper.selectUserSpace(userId);
         spaceDto.setUseSpace(useSpace == null ? 0L : useSpace);
+
+
         
         // 查询用户总空间
         Account userInfo = userMapper.findById(userId);
@@ -76,10 +79,23 @@ public class RedisComponent {
         
         // 将数据缓存到Redis，设置过期时间
         redisUtils.setex(redisKey, spaceDto, Constants.REDIS_KEY_EXPIRES_DAY);
+        UpdateWrapper<Account> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", userId)
+                .set("use_space", spaceDto.getUseSpace());
+        userMapper.update(null, updateWrapper);
         
         return spaceDto;
     }
-    
+    /**
+     * 保存设置
+     *
+     * @param sysSettingsDto
+     */
+    public void saveSysSettingsDto(SysSettingsDto sysSettingsDto) {
+        redisUtils.set(Constants.REDIS_KEY_SYS_SETTING, sysSettingsDto);
+    }
+
+
     /**
      * 刷新用户空间使用情况缓存
      * @param userId 用户ID
@@ -103,6 +119,10 @@ public class RedisComponent {
         if (userId == null || userSpaceDto == null) {
             return;
         }
+          //更改之后更新数据信息
+         UpdateWrapper<Account> wrapper = new UpdateWrapper();
+         wrapper.eq("id",userId).
+                 set("use_space",userSpaceDto.getUseSpace());
         redisUtils.setex(Constants.REDIS_KEY_USER_SPACE_USE + userId, userSpaceDto, Constants.REDIS_KEY_EXPIRES_DAY);
     }
 
@@ -134,7 +154,8 @@ public class RedisComponent {
     }
 
     public DownloadFileDto getDownloadCode(String code) {
-        return (DownloadFileDto) redisUtils.get(Constants.REDIS_KEY_DOWNLOAD + code);
+
+        return  (DownloadFileDto) redisUtils.get(Constants.REDIS_KEY_DOWNLOAD + code);
     }
     /**
      * 获取系统设置

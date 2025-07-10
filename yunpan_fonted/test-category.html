@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件分类功能测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .category-btn { margin: 5px; padding: 10px 15px; background: #409EFF; color: white; border: none; cursor: pointer; }
+        .category-btn:hover { background: #66b1ff; }
+        .active { background: #F56C6C !important; }
+        .result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>文件分类功能测试</h1>
+    
+    <div>
+        <button class="category-btn" onclick="testCategory('')">全部文件</button>
+        <button class="category-btn" onclick="testCategory('video')">视频</button>
+        <button class="category-btn" onclick="testCategory('image')">图片</button>
+        <button class="category-btn" onclick="testCategory('doc')">文档</button>
+        <button class="category-btn" onclick="testCategory('music')">音乐</button>
+        <button class="category-btn" onclick="testCategory('others')">其他</button>
+    </div>
+    
+    <div class="result" id="result">
+        点击分类按钮测试API调用...
+    </div>
+
+    <script>
+        async function testCategory(category) {
+            const resultDiv = document.getElementById('result');
+            
+            // 更新按钮状态
+            document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            try {
+                resultDiv.innerHTML = `正在测试分类: ${category || '全部文件'}...`;
+                
+                // 构建请求URL
+                const params = new URLSearchParams({
+                    pageNo: 1,
+                    pageSize: 10,
+                    filePid: '0'
+                });
+                
+                if (category) {
+                    params.set('category', category);
+                }
+                
+                const url = `http://localhost:8080/file/loadFileList?${params}`;
+                console.log('测试URL:', url);
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // 这里需要添加JWT token，从localStorage获取
+                        'Authorization': localStorage.getItem('token') || ''
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    const files = data.data.list || [];
+                    let html = `
+                        <h3>分类: ${category || '全部文件'}</h3>
+                        <p>总数: ${data.data.totalCount}</p>
+                        <h4>文件列表:</h4>
+                    `;
+                    
+                    if (files.length === 0) {
+                        html += '<p>暂无文件</p>';
+                    } else {
+                        html += '<ul>';
+                        files.forEach(file => {
+                            html += `<li>${file.fileName} (分类: ${file.fileCategory}, 类型: ${file.folderType === 1 ? '文件夹' : '文件'})</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">错误: ${data.message}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">网络错误: ${error.message}</p>`;
+                console.error('测试失败:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

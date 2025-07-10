@@ -33,10 +33,7 @@ public final class Const {
     public final static int verifyLimit = 60;
 
 
-    /**
-     * 分享访问令牌版本前缀
-     */
-    public static final String SHARE_ACCESS_TOKEN_VERSION = "share_token_version:";
+
 
     /**
      * 分享访问计数前缀

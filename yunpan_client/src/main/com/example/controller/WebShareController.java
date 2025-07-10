@@ -1,5 +1,7 @@
 package com.example.controller;
 
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.constants.Const;
 import com.example.constants.Constants;
 import com.example.entity.Dto.Account;
@@ -9,10 +11,13 @@ import com.example.entity.Enum.FileDelFlagEnums;
 import com.example.entity.Enum.ResponseCodeEnum;
 import com.example.entity.RestBean;
 import com.example.entity.Vo.request.FileInfoQuery;
+import com.example.entity.Vo.request.checkCodeVo;
+import com.example.entity.Vo.request.saveShareVo;
 import com.example.entity.Vo.response.FileInfoVO;
 import com.example.entity.Vo.response.PaginationResultVO;
 import com.example.entity.Vo.response.ShareInfoVO;
 import com.example.exception.BusinessException;
+import com.example.mapper.FileShareMapper;
 import com.example.mapper.UserMapper;
 import com.example.service.FileService;
 import com.example.service.FileShareService;
@@ -30,6 +35,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/showShare")
@@ -53,36 +59,38 @@ public class WebShareController {
 
     @Autowired
     RedisTemplate redisTemplate;
-    /**
-     * 获取分享登录信息
-     *
-     * @param userId 当前登录用户ID（可能为null）
-     * @param shareId 分享ID
-     * @return 分享信息
-     */
-    @RequestMapping("/getShareLoginInfo")
-    public RestBean getShareLoginInfo(@RequestAttribute(value = Const.ATTR_USER_ID, required = false) Integer userId,
-                                      String shareId) {
-        // 验证分享是否有效
-        try {
-            // 获取分享详情
-            ShareInfoVO shareInfoVO = getShareInfoCommon(shareId);
-
-            // 判断当前访问者是否是分享的创建者
-            if (userId != null && userId.equals(shareInfoVO.getUserId())) {
-                shareInfoVO.setCurrentUser(true);
-            } else {
-                shareInfoVO.setCurrentUser(false);
-            }
-
-            return RestBean.success(shareInfoVO);
-        } catch (BusinessException e) {
-            // 分享无效或已过期
-            return RestBean.failure(800,e.getMessage());
-        } catch (Exception e) {
-            return RestBean.failure(802,e.getMessage());
-        }
-    }
+    @Autowired
+    private FileShareMapper fileShareMapper;
+//    /**
+//     * 获取分享登录信息
+//     *
+//     * @param userId 当前登录用户ID（可能为null）
+//     * @param shareId 分享ID
+//     * @return 分享信息
+//     */
+//    @RequestMapping("/getShareLoginInfo")
+//    public RestBean getShareLoginInfo(@RequestAttribute(value = Const.ATTR_USER_ID, required = false) Integer userId,
+//                                      String shareId) {
+//        // 验证分享是否有效
+//        try {
+//            // 获取分享详情
+//            ShareInfoVO shareInfoVO = getShareInfoCommon(shareId,userId);
+//
+//            // 判断当前访问者是否是分享的创建者
+//            if (userId != null && userId.equals(shareInfoVO.getUserId())) {
+//                shareInfoVO.setCurrentUser(true);
+//            } else {
+//                shareInfoVO.setCurrentUser(false);
+//            }
+//
+//            return RestBean.success(shareInfoVO);
+//        } catch (BusinessException e) {
+//            // 分享无效或已过期
+//            return RestBean.failure(800,e.getMessage());
+//        } catch (Exception e) {
+//            return RestBean.failure(802,e.getMessage());
+//        }
+//    }
     /**
      * 获取分享信息
      *
@@ -91,23 +99,38 @@ public class WebShareController {
      */
     @RequestMapping("/getShareInfo")
 
-    public RestBean getShareInfo( String shareId) {
-        return RestBean.success(getShareInfoCommon(shareId));
+    public RestBean getShareInfo(@RequestParam("shareId")String shareId,@RequestParam("userId")Integer userId ,@RequestParam("code")String code) {
+
+        ShareInfoVO common = getShareInfoCommon(shareId,userId,code);
+        if (common == null) {
+            return RestBean.failure(707,"分享已经失效或者分享码错误");
+        }
+        return RestBean.success(common);
     }
 
-    private ShareInfoVO getShareInfoCommon(String shareId) {
+    private ShareInfoVO getShareInfoCommon(String shareId,Integer userId,String code) {
         FileShare share = fileShareService.getFileShareByShareId(shareId);
-
+         if(!share.getCode().equals(code)) {
+             return null;
+         }
         if (null == share || (share.getExpireTime() != null && new Date().after(share.getExpireTime()))) {
-            throw new BusinessException(ResponseCodeEnum.CODE_902.getMsg());
+               return null;
         }
 
         ShareInfoVO shareInfoVO = beanCopyUtils.copyBean(share, ShareInfoVO.class);
+        
+        // 手动设置 shareId，确保前端能接收到
+        shareInfoVO.setShareId(shareId);
+
         //查到分享文件
         FileInfo fileInfo = fileService.getFileInfoByFileIdAndUserId(share.getFileId(), share.getUserId());
+         shareInfoVO.setFileSize(fileInfo.getFileSize());
+         shareInfoVO.setFileCover(fileInfo.getFileCover());
+         // 添加缺失的文件类型
+         shareInfoVO.setFileType(fileInfo.getFileType());
 
         if (fileInfo == null || !FileDelFlagEnums.USING.getFlag().equals(fileInfo.getDelFlag())) {
-            throw new BusinessException(ResponseCodeEnum.CODE_902.getMsg());
+            return null;
         }
 
         shareInfoVO.setFileName(fileInfo.getFileName());
@@ -115,7 +138,12 @@ public class WebShareController {
 
         Account userInfo = userMapper.findById(share.getUserId());
 
-
+        // 判断是否为当前用户的分享，userId为-1表示未登录用户
+        if(userId != null && userId != -1 && Objects.equals(userId, fileInfo.getUserId())){
+            shareInfoVO.setCurrentUser(true);
+        }else{
+            shareInfoVO.setCurrentUser(false);
+        }
         shareInfoVO.setNickName(userInfo.getNickname());
         shareInfoVO.setAvatar(userInfo.getAvatar());
         shareInfoVO.setUserId(userInfo.getId());
@@ -124,12 +152,14 @@ public class WebShareController {
     /**
      * 验证分享密码
      *
-     * @param shareId 分享ID
-     * @param code 分享密码
+
      * @return 验证结果
      */
     @RequestMapping("/checkShareCode")
-    public RestBean checkShareCode(String shareId, String code) {
+    public RestBean checkShareCode(@RequestBody checkCodeVo vo) {
+         String shareId = vo.getShareId();
+         String code = vo.getCode();
+
         FileShare share = fileShareService.getFileShareByShareId(shareId);
 
         if (null == share || (share.getExpireTime() != null && new Date().after(share.getExpireTime()))) {
@@ -160,12 +190,6 @@ public class WebShareController {
     public RestBean loadFileList(@RequestAttribute("shareId") String shareId,
                                  @RequestAttribute("shareUserId") Integer shareUserId,
                                  String filePid) {
-        // 增加Redis中的访问验证
-        String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-        String validToken = (String) redisTemplate.opsForValue().get(validKey);
-        if (validToken == null) {
-            return RestBean.failure(804, "分享已失效，请重新获取");
-        }
         try {
             FileInfoQuery query = new FileInfoQuery();
 
@@ -224,13 +248,6 @@ public class WebShareController {
                                   @RequestAttribute("shareUserId") Integer shareUserId,
                                   String path) {
         try {
-            // 增加Redis中的访问验证
-            String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String validToken = (String) redisTemplate.opsForValue().get(validKey);
-            if (validToken == null) {
-                return RestBean.failure(804, "分享已失效，请重新获取");
-            }
-
             // 获取分享信息
             FileShare share = fileShareService.getFileShareByShareId(shareId);
             if (share == null) {
@@ -277,14 +294,6 @@ public class WebShareController {
                 return;
             }
 
-            // 增加Redis中的访问验证
-            String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String validToken = (String) redisTemplate.opsForValue().get(validKey);
-            if (validToken == null) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
-
             // 调用文件服务获取文件
             fileService.getFIle(request,response, fileId, shareUserId);
         } catch (Exception e) {
@@ -323,14 +332,6 @@ public class WebShareController {
                 return;
             }
 
-            // 增加Redis中的访问验证
-            String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String validToken = (String) redisTemplate.opsForValue().get(validKey);
-            if (validToken == null) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
-
             // 调用文件服务获取视频信息
             fileService.getFIle(request,response, fileId, shareUserId);
         } catch (Exception e) {
@@ -342,43 +343,27 @@ public class WebShareController {
      * 创建下载链接
      */
     @RequestMapping("/createDownloadUrl/{shareId}/{fileId}")
-    public RestBean createDownloadUrl(HttpServletRequest request,
-                                      @PathVariable("shareId")  String shareId,
+    public RestBean createDownloadUrl(@PathVariable("shareId")  String shareId,
                                       @PathVariable("fileId")  String fileId) {
         try {
-            // 验证分享有效性
-            String token = request.getHeader("Authorization");
-            if (token == null || !token.startsWith("Bearer ")) {
-                return RestBean.failure(401, "未提供有效的访问令牌");
+            // 1. 验证分享本身是否有效
+            FileShare share = fileShareService.getFileShareByShareId(shareId);
+            if (share == null || (share.getExpireTime() != null && new Date().after(share.getExpireTime()))) {
+                 throw new BusinessException(ResponseCodeEnum.CODE_902.getMsg());
             }
 
-            // 解析JWT令牌
-            Map<String, Object> tokenInfo = jwtUtils.resolveShareToken(token.substring(7));
-            if (tokenInfo == null) {
-                return RestBean.failure(401, "访问令牌无效");
+            // 2. 检查分享的文件是否存在
+            FileInfo fileInfo = fileService.getFileInfoByFileIdAndUserId(share.getFileId(), share.getUserId());
+            if (fileInfo == null || !FileDelFlagEnums.USING.getFlag().equals(fileInfo.getDelFlag())) {
+                throw new BusinessException(ResponseCodeEnum.CODE_902.getMsg());
             }
-
-            String tokenShareId = (String) tokenInfo.get("shareId");
-            Integer shareUserId = (Integer) tokenInfo.get("shareUserId");
-
-            // 验证shareId是否匹配
-            if (!shareId.equals(tokenShareId)) {
-                return RestBean.failure(403, "分享ID不匹配");
-            }
-
-            // 增加Redis中的访问验证
-            String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String validToken = (String) redisTemplate.opsForValue().get(validKey);
-            if (validToken == null) {
-                return RestBean.failure(403, "分享已失效，请重新获取");
-            }
-
-            // 创建下载链接
-            return fileService.createDownloadUrl(shareUserId, fileId);
+            
+            // 3. 从分享信息中获取 shareUserId 并创建下载链接
+            //    这个 fileId 是前端点击下载时传过来的，可能是分享的根文件/文件夹下的子文件
+            return fileService.createDownloadUrl(share.getUserId(), fileId);
+            
         } catch (BusinessException e) {
             return RestBean.failure(804, e.getMessage());
-        } catch (Exception e) {
-            return RestBean.failure(805, e.getMessage());
         }
     }
 
@@ -398,41 +383,35 @@ public class WebShareController {
      */
     @RequestMapping("/saveShare")
     public RestBean saveShare(HttpServletRequest request,
-                              String shareId,
-                              String shareFileIds,
-                              String myFolderId) {
+                              @RequestBody saveShareVo saveShareVo) {
+         String shareId = saveShareVo.getShareId();
+         String shareFileIds=saveShareVo.getShareFileIds();
+         String myFolderId=saveShareVo.getMyFolderId();
+         String code=saveShareVo.getCode();
         try {
             // 1. 验证分享访问令牌
-            String shareToken = request.getHeader("Authorization");
-            if (shareToken == null || !shareToken.startsWith("Bearer ")) {
-                return RestBean.failure(401, "未提供有效的分享访问令牌");
+            QueryWrapper<FileShare> wrapper = new QueryWrapper<FileShare>();
+            wrapper.eq("share_id", shareId);
+
+            FileShare shareRecord = fileShareMapper.selectOne(wrapper);
+            if (shareRecord == null) {
+                return RestBean.failure(404, "分享不存在");
             }
-
-            // 解析分享JWT令牌
-            Map<String, Object> shareTokenInfo = jwtUtils.resolveShareToken(shareToken.substring(7));
-            if (shareTokenInfo == null) {
-                return RestBean.failure(401, "分享访问令牌无效");
-            }
-
-            String tokenShareId = (String) shareTokenInfo.get("shareId");
-            Integer shareUserId = (Integer) shareTokenInfo.get("shareUserId");
-
-            // 验证shareId是否匹配
-            if (!shareId.equals(tokenShareId)) {
-                return RestBean.failure(403, "分享ID不匹配");
-            }
-
-            // 增加Redis中的访问验证
-            String validKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String validToken = (String) redisTemplate.opsForValue().get(validKey);
-            if (validToken == null) {
-                return RestBean.failure(403, "分享已失效，请重新获取");
+            
+            String correctCode = shareRecord.getCode();
+            Integer shareUserId = shareRecord.getUserId();
+            if (!correctCode.equals(code)) {
+                return RestBean.failure(401, "分享码错误");
             }
 
             // 2. 验证当前用户登录令牌
-            String userToken = request.getHeader("User-Authorization");
+            String userToken = request.getHeader("Authorization");
             if (userToken == null || !userToken.startsWith("Bearer ")) {
-                return RestBean.failure(401, "请先登录");
+                // 尝试从Authorization头获取用户令牌（兼容前端实现）
+                userToken = request.getHeader("Authorization");
+                if (userToken == null || !userToken.startsWith("Bearer ")) {
+                    return RestBean.failure(401, "请先登录");
+                }
             }
 
             // 解析用户JWT令牌

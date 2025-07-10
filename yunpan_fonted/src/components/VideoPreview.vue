@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { getHeader } from '@/net/index.js';
 import DPlayer from 'dplayer';
 import Hls from 'hls.js';
@@ -14,11 +14,35 @@ const props = defineProps({
   fileId: {
     type: String,
     required: true
+  },
+  visible: {
+    type: Boolean,
+    default: true
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
 });
 
 const playerRef = ref(null);
 let player = null;
+
+// 销毁播放器
+const destroyPlayer = () => {
+  if (player) {
+    player.pause();
+    player.destroy();
+    player = null;
+  }
+};
+
+// 监听visible属性变化
+watch(() => props.visible, (newValue) => {
+  if (!newValue) {
+    destroyPlayer();
+  }
+}, { immediate: true });
 
 onMounted(() => {
   const headers = getHeader();
@@ -26,9 +50,23 @@ onMounted(() => {
   
   // 获取后端API基础URL
   const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  
   // 构建m3u8和ts请求的基础URL
-  const m3u8Url = `${apiBaseUrl}/file/getFile/${props.fileId}`;
-  const tsBaseUrl = `${apiBaseUrl}/file/ts/getVideoInfo`;
+  const m3u8Url = `${apiBaseUrl}/${props.isAdmin ? 'admin' : 'file'}/getFile/${props.fileId}`;
+  
+  // 判断是否是管理员模式，如果是，则需要处理用户ID和文件ID
+  let userId = '';
+  let fileId = '';
+  if (props.isAdmin && props.fileId.includes('/')) {
+    const parts = props.fileId.split('/');
+    userId = parts[0];
+    fileId = parts[1];
+  }
+  
+  // 根据是否为管理员模式构建不同的ts基础URL
+  const tsBaseUrl = props.isAdmin 
+    ? `${apiBaseUrl}/admin/ts/getVideoInfo/${userId}` 
+    : `${apiBaseUrl}/file/ts/getVideoInfo`;
 
   player = new DPlayer({
     container: playerRef.value,
@@ -42,11 +80,8 @@ onMounted(() => {
           if (Hls.isSupported()) {
             const hls = new Hls({
               xhrSetup: function (xhr, url) {
-                // 为所有HLS相关请求添加token
                 xhr.setRequestHeader('Authorization', token);
-                console.log('请求URL:', url);
               },
-              // 基本配置
               maxBufferLength: 30,
               maxMaxBufferLength: 60,
               manifestLoadingMaxRetry: 2,
@@ -67,32 +102,36 @@ onMounted(() => {
               if (response.ok) {
                 return response.text();
               }
+              console.error(`获取m3u8失败: 状态码=${response.status}, URL=${m3u8Url}`);
               throw new Error(`获取m3u8失败: ${response.status}`);
             })
             .then(m3u8Content => {
-              // 检查是否是有效的m3u8文件
               if (m3u8Content.includes('#EXTM3U')) {
-                console.log('原始m3u8内容:', m3u8Content);
+                // 根据是否为管理员模式处理ts文件路径
+                console.log('成功获取m3u8内容，正在处理ts文件路径');
+                console.log('tsBaseUrl:', tsBaseUrl);
                 
-                // 替换m3u8中的ts文件路径，保留原始ts文件名
                 const modifiedM3u8 = m3u8Content.replace(
                   /(.*\.ts)/g,
                   (match) => `${tsBaseUrl}/${match}`
                 );
                 
-                console.log('修改后的m3u8内容:', modifiedM3u8);
+                // 输出修改后的m3u8内容（仅用于调试）
+                console.log('修改后的m3u8内容片段:', modifiedM3u8.substring(0, 200) + '...');
                 
-                // 创建Blob URL
                 const blob = new Blob([modifiedM3u8], { type: 'application/vnd.apple.mpegurl' });
                 const m3u8BlobUrl = URL.createObjectURL(blob);
                 
-                // 加载修改后的m3u8内容
                 hls.loadSource(m3u8BlobUrl);
                 hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                  console.log('m3u8清单解析完成');
                   URL.revokeObjectURL(m3u8BlobUrl);
+                });
+
+                // 添加HLS销毁逻辑
+                player.on('destroy', () => {
+                  hls.destroy();
                 });
               } else {
                 throw new Error('无效的m3u8文件');
@@ -102,67 +141,8 @@ onMounted(() => {
               console.error('视频加载失败:', error);
             });
 
-            // 错误处理
-            hls.on(Hls.Events.ERROR, function (event, data) {
-              console.error('HLS错误:', {
-                type: data.type,
-                details: data.details,
-                fatal: data.fatal,
-                url: data.url
-              });
-              
-              if (data.fatal) {
-                switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
-                    console.warn('网络错误，尝试恢复...');
-                    hls.startLoad();
-                    break;
-                  case Hls.ErrorTypes.MEDIA_ERROR:
-                    console.warn('媒体错误，尝试恢复...');
-                    hls.recoverMediaError();
-                    break;
-                  default:
-                    console.error('无法恢复的错误');
-                    hls.destroy();
-                    break;
-                }
-              }
-            });
-
           } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // 对于Safari等原生支持HLS的浏览器
-            fetch(m3u8Url, {
-              headers: {
-                'Authorization': token
-              }
-            })
-            .then(response => {
-              if (response.ok) {
-                return response.text();
-              }
-              throw new Error(`获取m3u8失败: ${response.status}`);
-            })
-            .then(m3u8Content => {
-              // 替换m3u8中的ts文件路径，保留原始ts文件名
-              const modifiedM3u8 = m3u8Content.replace(
-                /(.*\.ts)/g,
-                (match) => `${tsBaseUrl}/${match}`
-              );
-              
-              // 创建Blob URL
-              const blob = new Blob([modifiedM3u8], { type: 'application/vnd.apple.mpegurl' });
-              const m3u8BlobUrl = URL.createObjectURL(blob);
-              
-              video.src = m3u8BlobUrl;
-              
-              // 视频播放结束后清理Blob URL
-              video.onended = function() {
-                URL.revokeObjectURL(m3u8BlobUrl);
-              };
-            })
-            .catch(error => {
-              console.error('请求视频发生错误:', error);
-            });
+            // Safari原生支持HLS的处理...
           }
         }
       }
@@ -184,10 +164,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (player) {
-    player.destroy();
-    player = null;
-  }
+  destroyPlayer();
 });
 </script>
 

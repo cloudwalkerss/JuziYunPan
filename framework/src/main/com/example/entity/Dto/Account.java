@@ -24,6 +24,7 @@ public class Account  {
 
     String username;
 
+    @TableField("nick_name")
     String nickname;
 
     String password;
@@ -37,12 +38,12 @@ public class Account  {
     Date registerTime;
 
     Date updateTime;
-
+    @TableField("use_space")
     Long useSpace;
-
+    @TableField("total_space")
     Long totalSpace;
 
 
-
+    @TableField("Banned")
     Integer Banned;//账号封禁
 }

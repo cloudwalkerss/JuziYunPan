@@ -27,10 +27,6 @@ public class UserInfoVo {
 
     Date updateTime;
 
-     Long userspace;
-
-    Long totalspace;
-
 
 
 }

@@ -79,15 +79,11 @@ public class UserAdiminServiceImpl extends ServiceImpl<UserMapper, Account> impl
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateUserStatus(Integer userId, Integer status) {
-              if(UserStatusEnum.DISABLE.getStatus().equals(status)){
-                   QueryWrapper<Account> queryWrapper = new QueryWrapper<>();
-                   queryWrapper.eq("user_id", userId)
-                           .eq("Banned", status);
-                   userMapper.delete(queryWrapper);
-              }
+
               UpdateWrapper<Account> updateWrapper = new UpdateWrapper<>();
-              updateWrapper.eq("user_id", userId)
+              updateWrapper.eq("id", userId)
                       .set("Banned", status);
+               baseMapper.update(null, updateWrapper);
 
     }
 

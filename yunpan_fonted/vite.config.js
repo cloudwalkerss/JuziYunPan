@@ -35,7 +35,24 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      },
       '/file': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      },
+      '/admin': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      },
+      '/showShare': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      },
+       '/user':{
         target: 'http://localhost:8080',
         changeOrigin: true
       }

@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class FileInfoQuery {
 
+  private  String nickName;
 
     /**
      * 文件ID
@@ -79,7 +80,7 @@ public class FileInfoQuery {
     /**
      * 最后更新时间
      */
-    private String lastUpdateTime;
+    private String UpdateTime;
 
     private String lastUpdateTimeStart;
 

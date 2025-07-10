@@ -199,36 +199,21 @@ public class JwtUtils {
 
         String tokenId = UUID.randomUUID().toString();
 
-        // 将分享访问令牌版本存入Redis，过期时间与令牌一致
-        String versionKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-        String currentVersion = UUID.randomUUID().toString();
-        template.opsForValue().set(versionKey, currentVersion, 24, TimeUnit.HOURS);
-
         return JWT.create()
                 .withJWTId(tokenId)
                 .withClaim("shareId", shareId)
                 .withClaim("shareUserId", shareUserId)
-                .withClaim("version", currentVersion)
                 .withExpiresAt(expire)
                 .withIssuedAt(new Date())
                 .sign(algorithm);
     }
 
-    /**
-     * 使分享的所有访问令牌失效
-     * @param shareId 分享ID
-     */
-    public void invalidateShareToken(String shareId) {
-        // 更新Redis中的版本信息，使所有旧令牌失效
-        String versionKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-        String newVersion = UUID.randomUUID().toString();
-        template.opsForValue().set(versionKey, newVersion, 24, TimeUnit.HOURS);
-    }
+
 
     /**
      * 解析分享访问令牌
      * @param token 令牌
-     * @return 解析结果，包含shareId、shareUserId和version
+     * @return 解析结果，包含shareId、shareUserId
      */
     public Map<String, Object> resolveShareToken(String token) {
         if (token == null || !token.startsWith("Bearer ")) return null;
@@ -245,16 +230,6 @@ public class JwtUtils {
 
             String shareId = verify.getClaim("shareId").asString();
             Integer shareUserId = verify.getClaim("shareUserId").asInt();
-            String version = verify.getClaim("version").asString();
-
-            // 检查Redis中的版本是否匹配
-            String versionKey = Const.SHARE_ACCESS_TOKEN_VERSION + shareId;
-            String currentVersion = template.opsForValue().get(versionKey);
-
-            // 如果Redis中没有版本信息或版本不匹配，则令牌无效
-            if (currentVersion == null || !currentVersion.equals(version)) {
-                return null;
-            }
 
             Map<String, Object> result = new HashMap<>();
             result.put("shareId", shareId);

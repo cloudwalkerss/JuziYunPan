@@ -1,6 +1,7 @@
 package com.example.entity.Dto;
 
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.example.entity.Enum.DateTimePatternEnum;
 import com.example.utils.DateUtil;
@@ -63,28 +64,38 @@ public class FileShare  {
      */
     private Integer showCount;
 
-
+    @TableField(exist = false)
     private String fileName;
 
     /**
      * 0:文件 1:目录
      */
+    @TableField(exist = false)
     private Integer folderType;
 
     /**
      * 1:视频 2:音频  3:图片 4:文档 5:其他
      */
+    @TableField(exist = false)
     private Integer fileCategory;
 
     /**
      * 1:视频 2:音频  3:图片 4:pdf 5:doc 6:excel 7:txt 8:code 9:zip 10:其他
      */
+    @TableField(exist = false)
     private Integer fileType;
 
     /**
      * 封面
      */
+    @TableField(exist = false)
     private String fileCover;
+
+    /**
+     * 用户名（临时字段，不存储到数据库）
+     */
+    @TableField(exist = false)
+    private String nickName;
 
 
     @Override

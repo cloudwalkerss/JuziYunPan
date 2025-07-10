@@ -1,6 +1,7 @@
 import axios from 'axios'
 import {ElMessage} from "element-plus";
-const authItemName ='access_token'
+const authItemName = 'access_token'
+
 
 const defaultFailure=(message,code,url)=>{
     console.warn(`请求地址：${url},状态码：${code},错误信息：${message}`)
@@ -14,39 +15,62 @@ const  defaultError=(err)=>{
 
 }
 
-function internalPost(url,data,header,success,failure,error=defaultError) {
-    axios.post(url, data, {headers: header}).then(({data}) => {
-        if (data.code === 200) {
-            success(data.data)
-        } else {
-            failure(data.message, data.code, url)
-        }
-    }).catch(err => error(err))
+function internalPost(url, data, header, success, failure, error = defaultError) {
+    return new Promise((resolve, reject) => {
+        axios.post(url, data, { headers: header }).then(({ data }) => {
+            if (data.code === 200) {
+                if (success) success(data.data); // 兼容旧的回调方式
+                resolve(data.data);
+            } else {
+                if (failure) failure(data.message, data.code, url); // 兼容旧的回调方式
+                reject(data);
+            }
+        }).catch(err => {
+            if (error) error(err);
+            reject(err);
+        });
+    });
 }
 
 function internalGet(url, header, success, failure, error = defaultError) {
-    axios.get(url, {headers: header}).then(({data}) => {
-
-        if (data.code === 200) {
-            success(data.data)
-        } else {
-
-            failure(data.message, data.code, url)
-        }
-    }).catch(err => error(err))
+    return new Promise((resolve, reject) => {
+        axios.get(url, { headers: header }).then(({ data }) => {
+            if (data.code === 200) {
+                if (success) success(data.data); // 兼容旧的回调方式
+                resolve(data.data);
+            } else {
+                if (failure) failure(data.message, data.code, url); // 兼容旧的回调方式
+                reject(data);
+            }
+        }).catch(err => {
+            if (error) error(err);
+            reject(err);
+        });
+    });
 }
 
 //保存token
-function saveToken(token,remember,expire){
-    const authObj={token,remember,expire}
+function saveToken(token, remember, expire){
+    if (!token) {
+        console.warn('尝试保存空token')
+        return
+    }
 
-    const  str=JSON.stringify(authObj)//转成字符串,因为下面要存储
+    const authObj = {
+        token,
+        remember,
+        expire: expire || new Date(Date.now() + 24*60*60*1000) // 如果没有过期时间，默认24小时
+    }
+
+    const str = JSON.stringify(authObj)
+    console.log('保存token:', {remember, expire: authObj.expire})
 
     if(remember){
-        localStorage.setItem(authItemName,str)//只支持字符串的键值对存储
-    }
-    else{
-        sessionStorage.setItem(authItemName,str)
+        localStorage.setItem(authItemName, str)
+        sessionStorage.removeItem(authItemName) // 清除可能存在的session storage中的token
+    } else {
+        sessionStorage.setItem(authItemName, str)
+        localStorage.removeItem(authItemName) // 清除可能存在的local storage中的token
     }
 }
 
@@ -56,23 +80,39 @@ function deleteToken(){
 }
 
 //取出token
-function  takeAccessToken(){
+function takeAccessToken(){
     //从存储token的地方取出token
-    const str=localStorage.getItem(authItemName)||sessionStorage.getItem(authItemName)
+    const str = localStorage.getItem(authItemName)||sessionStorage.getItem(authItemName)
 
-    if(!str)return null
+    if(!str) return null
 
+    try {
+        const authobj = JSON.parse(str)//转化回json对象
+        
+        // 检查token是否存在
+        if (!authobj.token) {
+            console.warn('Token对象中没有token字段')
+            return null
+        }
 
-    const authobj=JSON.parse(str)//转化回json对象
-    if(authobj.expire<=new Date()){
-        //过期删除
+        // 检查过期时间
+        if (authobj.expire) {
+            const expireDate = new Date(authobj.expire)
+            const now = new Date()
+            if (expireDate <= now) {
+                console.warn('Token已过期:', {expire: expireDate, now: now})
+                deleteToken()
+                return null
+            }
+        }
+
+        // Token有效
+        return authobj.token
+    } catch (error) {
+        console.error('Token解析错误:', error, '原始数据:', str)
         deleteToken()
-        ElMessage.warning('登录状态已经过期了，请您重新登录')
         return null
     }
-    return authobj.token
-
-
 }
 
 function login(username, password, remember,captcha,captchaId, success, failure = defaultFailure) {//将其暴露出去
@@ -98,12 +138,10 @@ function getHeader(){
 }
 //给外部用的
 function get(url,success,failure=defaultFailure){
-
-    internalGet(url,getHeader(),success,failure)
-
+    return internalGet(url,getHeader(),success,failure)
 }
 function post(url,data,success,failure=defaultFailure){
-    internalPost(url,data,getHeader(),success,failure)
+    return internalPost(url,data,getHeader(),success,failure)
 }
 
 

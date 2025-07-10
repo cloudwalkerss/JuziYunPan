@@ -62,7 +62,7 @@ public class FileInfoVO {
     /**
      * 最后更新时间
      */
-    private Date lastUpdateTime;
+    private Date UpdateTime;
     
     /**
      * 0:文件 1:目录

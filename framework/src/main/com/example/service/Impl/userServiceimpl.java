@@ -2,6 +2,7 @@ package com.example.service.Impl;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.component.RedisComponent;
 import com.example.constants.AppConfig;
 import com.example.constants.Constants;
 import com.example.entity.Dto.Account;
@@ -73,6 +74,9 @@ public class userServiceimpl extends ServiceImpl<UserMapper, Account> implements
 
     @Autowired
     FileServiceImpl fileService;
+
+    @Resource
+    RedisComponent redisComponent;
    //更新头像
     @Override
     public void updateUserInfoByUserId(Account userInfo, Integer userId) {
@@ -122,7 +126,7 @@ public class userServiceimpl extends ServiceImpl<UserMapper, Account> implements
         user.setRegisterTime(new Date());
         user.setUpdateTime(new Date());
         user.setUseSpace(0L);
-        
+        user.setTotalSpace(Long.valueOf(redisComponent.getSysSettingsDto().getUserInitUseSpace()));
         //如果没问题就将账户插入
          userMapper.createAccount(user);
         return null;

@@ -44,7 +44,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
          //先判断用户是否被封禁
 
         String token = getJwtFromRequest(request);
-        
+
         if (token != null) {
             // 解析JWT
             DecodedJWT jwt = jwtUtils.resolveJwt(token);
@@ -79,6 +79,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     details.put("role", account.getRole());
                     authentication.setDetails(details);
                     request.setAttribute(Const.ATTR_USER_ID,userId);
+
                     // 设置安全上下文
                     SecurityContextHolder.getContext().setAuthentication(authentication);
 

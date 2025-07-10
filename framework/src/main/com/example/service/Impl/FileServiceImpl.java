@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.util.DateUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.component.RedisComponent;
 import com.example.constants.AppConfig;
@@ -52,6 +53,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.example.service.Impl.MailService.logger;
+import static java.lang.Long.max;
 
 
 /**
@@ -89,39 +91,114 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
      */
     @Override
     public PaginationResultVO<FileInfoVO> findListByPage(FileInfoQuery query) {
-        // 设置查询条件
-//        FileInfoQuery fileInfo = new FileInfoQuery();
-//        fileInfo.setUserId(query.getUserId());
-//        fileInfo.setFileCategory(query.getFileCategory());
-//        fileInfo.setDelFlag(query.getDelFlag());
+        // 创建分页对象
+        Page<FileInfo> page = new Page<>(query.getPageNo(), query.getPageSize());
         
-        // 使用PageHelper进行分页，这是关键步骤
-        // startPage方法会自动拦截接下来的查询，并添加分页条件
-        PageHelper.startPage(query.getPageNo(), query.getPageSize());
+        // 构建查询条件
+        QueryWrapper<FileInfo> queryWrapper = new QueryWrapper<>();
         
-        // 如果有排序要求，设置排序
-        if (query.getOrderBy() != null) {
-            PageHelper.orderBy(query.getOrderBy());
+        // 用户ID条件
+        if (query.getUserId() != null) {
+            queryWrapper.eq("user_id", query.getUserId());
         }
-        // 先获取分页信息
-
-        // 执行查询，PageHelper会自动处理分页
-        List<FileInfo> list = fileMapper.selectFileList(query);
-
-        PageInfo<FileInfo> pageInfo = new PageInfo<>(list);
-
+        
+        // 文件ID条件
+        if (query.getFileId() != null && !query.getFileId().isEmpty()) {
+            queryWrapper.eq("file_id", query.getFileId());
+        }
+        
+        // 父级目录ID条件
+        if (query.getFilePid() != null && !query.getFilePid().isEmpty()) {
+            queryWrapper.eq("file_pid", query.getFilePid());
+        }
+        
+        // 文件名称条件，支持模糊查询
+        if (query.getFileName() != null && !query.getFileName().isEmpty()) {
+            queryWrapper.like("file_name", query.getFileName());
+        }
+        
+        // 文件类别条件
+        if (query.getFileCategory() != null) {
+            queryWrapper.eq("file_category", query.getFileCategory());
+        }
+        
+        // 文件夹类型条件
+        if (query.getFolderType() != null) {
+            queryWrapper.eq("folder_type", query.getFolderType());
+        }
+        
+        // 删除标志条件
+        if (query.getDelFlag() != null) {
+            queryWrapper.eq("del_flag", query.getDelFlag());
+        }
+        
+        // 状态条件
+        if (query.getStatus() != null) {
+            queryWrapper.eq("status", query.getStatus());
+        }
+        
+        // 如果是在回收站中，不允许查看文件夹内容
+        if (FileDelFlagEnums.RECYCLE.getFlag().equals(query.getDelFlag())) {
+            // 只查询当前层级的文件，不允许进入文件夹
+            queryWrapper.eq("file_pid", "0");
+        }
+        
+        // 设置排序
+        if (query.getOrderBy() != null && !query.getOrderBy().isEmpty()) {
+            // 解析排序字段，支持多种格式
+            String orderBy = query.getOrderBy().toLowerCase();
+            if (orderBy.contains("desc")) {
+                String field = orderBy.replace("desc", "").trim();
+                queryWrapper.orderByDesc(field);
+            } else if (orderBy.contains("asc")) {
+                String field = orderBy.replace("asc", "").trim();
+                queryWrapper.orderByAsc(field);
+            } else {
+                // 默认降序
+                queryWrapper.orderByDesc(query.getOrderBy());
+            }
+        } else {
+            // 默认按更新时间降序
+            queryWrapper.orderByDesc("update_time");
+        }
+        
+        // 执行分页查询
+        Page<FileInfo> fileInfoPage = fileMapper.selectPage(page, queryWrapper);
+        
+        // 获取查询结果
+        List<FileInfo> list = fileInfoPage.getRecords();
+        
+        // 如果是回收站的查询结果，将所有文件夹标记为不可访问
+        if (FileDelFlagEnums.RECYCLE.getFlag().equals(query.getDelFlag())) {
+            list.forEach(fileInfo -> {
+                if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
+                    fileInfo.setFileName(fileInfo.getFileName() + " (已删除)");
+                }
+            });
+        }
+        
+        // 转换为VO对象
         List<FileInfoVO> fileInfoVOS = beanCopyUtils.copyBeanList(list, FileInfoVO.class);
+
+        // 补充文件信息和用户信息
+        for(FileInfoVO fileInfoVO : fileInfoVOS) {
+            FileInfo fileInfo = fileMapper.selectByFileIdAndUserId(fileInfoVO.getFileId(), fileInfoVO.getUserId());
+            if (fileInfo != null) {
+                fileInfoVO.setFileCover(fileInfo.getFileCover());
+            }
+            Account account = userMapper.findById(fileInfoVO.getUserId());
+            if (account != null) {
+                fileInfoVO.setNickName(account.getNickname());
+            }
+        }
         
-//        // 使用PageInfo包装查询结果，获取分页相关信息
-//        PageInfo<FileInfoVO> pageInfo = new PageInfo<>(fileInfoVOS);
-        
-        // 构建并返回分页结果
+        // 构建分页结果
         return new PaginationResultVO<>(
-                (int) pageInfo.getTotal(),  // 总记录数
-                query.getPageSize(),        // 每页大小
-                query.getPageNo(),          // 当前页码
-                pageInfo.getPages(),        // 总页数
-                fileInfoVOS                       // 当前页数据
+                (int) fileInfoPage.getTotal(),      // 总记录数
+                query.getPageSize(),                // 每页大小
+                query.getPageNo(),                  // 当前页码
+                (int) fileInfoPage.getPages(),      // 总页数
+                fileInfoVOS                         // 当前页数据
         );
     }
   @Transactional(rollbackFor = Exception.class)
@@ -273,7 +350,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
         } catch (Exception e) {
             uploadSuccess = false;
             log.error("文件上传失败", e);
-            throw new BusinessException(ResponseCodeEnum.CODE_500.getMsg() + ":" + e.getMessage());
+            throw new BusinessException(ResponseCodeEnum.CODE_500.getCode(),ResponseCodeEnum.CODE_500.getMsg() + ":" + e.getMessage());
         } finally {
             if (!uploadSuccess && tempFileFolder != null) {
                 try {
@@ -288,6 +365,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     @Override
     public void getFIle(HttpServletRequest request,HttpServletResponse response, String fileId, Integer userId) throws IOException {
         String filePath = null;
+        FileTypeEnums fileTypeEnums = null;
         if (fileId.endsWith(".ts")) {
             String[] tsArray = fileId.split("_");
             String realFileId = tsArray[0];
@@ -304,21 +382,29 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             if (fileInfo == null) {
                 return;
             }
+            fileTypeEnums= FileTypeEnums.getByType(fileInfo.getFileType());
             //判断一下文件类型
             if (FileCategoryEnums.VIDEO.getCategory().equals(fileInfo.getFileCategory())) {
                 String fileNameNoSuffix = StringTools.getFileNameNoSuffix(fileInfo.getFilePath());//获得无后缀的地址
                 filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileNameNoSuffix + "/" + Constants.M3U8_NAME;
 //                filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileInfo.getFilePath();
-                File file = new File(filePath);
-                if (!file.exists()) {
-                    return;
-                }
-                readFile(response, filePath);
+
+//                readFile(response, filePath);
             } else {
                 //直接读
                 filePath = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileInfo.getFilePath();
-                readFile(response, request, filePath);
+//                readFile(response, request, filePath);
             }
+            File file = new File(filePath);
+            if (!file.exists()) {
+                return;
+            }
+            if (fileTypeEnums==FileTypeEnums.MUSIC) {
+                readFile(response,request, filePath);
+            }else{
+                readFile(response, filePath);
+            }
+
         }
     }
    //创建新文件
@@ -492,7 +578,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     //移动文件
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public RestBean changeFileFolder(String fileIds, String filePid, Integer userId) {
+    public RestBean changeFileFolder(  String fileIds, String filePid, Integer userId) {
         // 检查参数是否为空
         if (fileIds == null || fileIds.trim().isEmpty()) {
             return RestBean.failure(600, "参数错误");
@@ -681,6 +767,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
              updateInfo.setDelFlag(FileDelFlagEnums.RECYCLE.getFlag());
              updateInfo.setUpdateTime(new Date());
              fileMapper.update(updateInfo, wrapper);
+             redisComponent.refreshUserSpaceUse(userId);
              return RestBean.success();
         } catch (Exception e) {
             log.error("删除文件失败: {}", e.getMessage(), e);
@@ -864,51 +951,70 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     @Override
     @Transactional
     public void saveShare(String shareRootFilePid, String shareFileIds, String myFolderId, Integer shareUserId, Integer cureentUserId) {
-        String[] shareFileIdArray = shareFileIds.split(",");
-        //目标目录文件列表
+        try {
+            String[] shareFileIdArray = shareFileIds.split(",");
+            //目标目录文件列表
 
-        QueryWrapper<FileInfo> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("user_id", cureentUserId)
-                .eq("file_pid",myFolderId);
-        List<FileInfo> currentFileList = this.fileMapper.selectList(queryWrapper);
-        Map<String, FileInfo> currentFileMap = currentFileList.stream().collect(Collectors.toMap(FileInfo::getFileName, Function.identity(), (file1, file2) -> file2));
-        //选择的文件
+            QueryWrapper<FileInfo> queryWrapper = new QueryWrapper<>();
+            queryWrapper.eq("user_id", cureentUserId)
+                    .eq("file_pid",myFolderId);
+            List<FileInfo> currentFileList = this.fileMapper.selectList(queryWrapper);
+            Map<String, FileInfo> currentFileMap = currentFileList.stream().collect(Collectors.toMap(FileInfo::getFileName, Function.identity(), (file1, file2) -> file2));
+            //选择的文件
 
-        QueryWrapper<FileInfo>wrapper=new QueryWrapper<>();
-        wrapper.eq("user_id", shareUserId)
-                .in("file_id", shareFileIdArray);
-        List<FileInfo> shareFileList = this.fileMapper.selectList(wrapper);
-        //重命名选择的文件
-        List<FileInfo> copyFileList = new ArrayList<>();
-        Date curDate = new Date();
-        for (FileInfo item : shareFileList) {
-            FileInfo haveFile = currentFileMap.get(item.getFileName());
-            if (haveFile != null) {
-                item.setFileName(StringTools.rename(item.getFileName()));
+            QueryWrapper<FileInfo>wrapper=new QueryWrapper<>();
+            wrapper.eq("user_id", shareUserId)
+                    .in("file_id", shareFileIdArray);
+            List<FileInfo> shareFileList = this.fileMapper.selectList(wrapper);
+            //重命名选择的文件
+            List<FileInfo> copyFileList = new ArrayList<>();
+            Date curDate = new Date();
+            for (FileInfo item : shareFileList) {
+                // 创建文件副本，避免直接修改原文件信息
+                FileInfo copyItem = beanCopyUtils.copyBean(item, FileInfo.class);
+                FileInfo haveFile = currentFileMap.get(copyItem.getFileName());
+                if (haveFile != null) {
+                    copyItem.setFileName(StringTools.rename(copyItem.getFileName()));
+                }
+
+                // 设置新的文件属性
+                copyItem.setFileId(StringTools.getRandomString(Constants.LENGTH_10));
+                copyItem.setUserId(cureentUserId);
+                copyItem.setFilePid(myFolderId);
+                copyItem.setCreateTime(curDate);
+                copyItem.setUpdateTime(curDate);
+
+                copyFileList.add(copyItem);
+
+                // 如果是文件夹，递归处理子文件
+                if (FileFolderTypeEnums.FOLDER.getType().equals(item.getFolderType())) {
+                    findAllSubFile(copyFileList, item, shareUserId, cureentUserId, curDate, copyItem.getFileId());
+                }
             }
-            findAllSubFile(copyFileList, item, shareUserId, cureentUserId, curDate, myFolderId);
-        }
 
-        // 批量插入
-        fileInfoService.saveBatch(copyFileList);
+            // 批量插入
+            fileInfoService.saveBatch(copyFileList);
 
-        //更新空间
+                    //更新空间
         Long useSpace = this.fileMapper.selectUserSpace(cureentUserId);
         Account dbUserInfo = this.userMapper.selectById(cureentUserId);
         if (useSpace > dbUserInfo.getTotalSpace()) {
             throw new BusinessException(ResponseCodeEnum.CODE_904);
         }
-       Account userInfo=new Account();
 
-        userInfo.setUseSpace(useSpace);
-
-        UpdateWrapper<Account>updateWrapper=new UpdateWrapper<>();
-        updateWrapper.eq("user_id", cureentUserId)
-                .set("userspace", useSpace);
-        //设置缓存
-        UserSpaceDTO userSpaceDto = redisComponent.getUserSpaceUse(cureentUserId);
-        userSpaceDto.setUseSpace(useSpace);
-        redisComponent.saveUserSpaceUse(cureentUserId, userSpaceDto);
+        // 使用专门的updateUserSpace方法更新用户空间
+        Integer updateResult = userMapper.updateUserSpace(cureentUserId, useSpace, null);
+        if (updateResult == 0) {
+            throw new BusinessException(ResponseCodeEnum.CODE_904);
+        }
+            //设置缓存
+            UserSpaceDTO userSpaceDto = redisComponent.getUserSpaceUse(cureentUserId);
+            userSpaceDto.setUseSpace(useSpace);
+            redisComponent.saveUserSpaceUse(cureentUserId, userSpaceDto);
+        } catch (BusinessException e) {
+            System.out.println(e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
     private void findAllSubFile(List<FileInfo> copyFileList, FileInfo parentFileInfo, Integer sourceUserId, Integer targetUserId, Date curDate, String newParentId) {
 
@@ -919,8 +1025,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
         List<FileInfo> subFileList = this.fileMapper.selectList(wrapper);
 
         for (FileInfo subFile : subFileList) {
-            FileInfo newSubFile = new FileInfo();
-            beanCopyUtils.copyBean(subFile, newSubFile.getClass());
+            // 正确使用copyBean方法：接收返回值
+            FileInfo newSubFile = beanCopyUtils.copyBean(subFile, FileInfo.class);
             newSubFile.setFileId(StringTools.getRandomString(Constants.LENGTH_10));
             newSubFile.setUserId(targetUserId);
             newSubFile.setFilePid(newParentId);
@@ -957,8 +1063,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     private void updateUserUsedSpace(Integer userId, Long useSpace) {
         // 方式1：使用UpdateWrapper
         UpdateWrapper<Account> updateWrapper = new UpdateWrapper<>();
-        updateWrapper.eq("user_id", userId)
-                .set("user_space", useSpace);
+        updateWrapper.eq("id", userId)
+                .set("use_space", useSpace);
         userMapper.update(null, updateWrapper);
 
 
@@ -983,18 +1089,22 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     }
 
 
-    private void findAllSubFolderFileIdList(List<String> delFilePidList, Integer userId, String fileId, Integer flag) {
-         delFilePidList.add(fileId);
+    private void findAllSubFolderFileIdList(List<String> fileIdList, Integer userId, String filePid, Integer delFlag) {
+        // 查询当前文件夹下的所有文件和子文件夹
          QueryWrapper<FileInfo> queryWrapper = new QueryWrapper<>();
          queryWrapper.eq("user_id", userId)
-                 .eq("file_pid", fileId)
-                 .eq("del_flag", flag)
-                 .eq("file_type",FileFolderTypeEnums.FOLDER.getType());
+                .eq("file_pid", filePid)
+                .eq("del_flag", delFlag);
+        
           List<FileInfo> fileInfoList = fileMapper.selectList(queryWrapper);
+        
           for (FileInfo fileInfo : fileInfoList) {
-              findAllSubFolderFileIdList(delFilePidList, userId, fileInfo.getFileId(),flag);
+            fileIdList.add(fileInfo.getFileId());
+            // 如果是文件夹，则递归查找其子文件
+            if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
+                findAllSubFolderFileIdList(fileIdList, userId, fileInfo.getFileId(), delFlag);
           }
-
+        }
     }
 
 
@@ -1032,13 +1142,16 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
         return fileName;
     }
     private void updateUserSpace(Integer userId, Long totalSize) {
-        Integer count = userMapper.updateUserSpace(userId, totalSize, null);
+        UserSpaceDTO spaceDto = redisComponent.getUserSpaceUse(userId);
+
+
+        Integer count = userMapper.updateUserSpace(userId, spaceDto.getUseSpace()+totalSize, null);
         if (count == 0) {
             throw new BusinessException(ResponseCodeEnum.CODE_904);
         }
-        UserSpaceDTO spaceDto = redisComponent.getUserSpaceUse(userId);
         spaceDto.setUseSpace(spaceDto.getUseSpace() + totalSize);
         redisComponent.saveUserSpaceUse(userId, spaceDto);
+
     }
     /**
      * 查询满足条件的记录数量
@@ -1358,7 +1471,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
                 if (ranges[0].isEmpty() && ranges.length > 1 && !ranges[1].isEmpty()) {
                     try {
                         long length = Long.parseLong(ranges[1]);
-                        startByte = Math.max(0, fileLength - length);
+                        startByte = max(0, fileLength - length);
                         endByte = fileLength - 1;
                     } catch (NumberFormatException e) {
                         startByte = 0;

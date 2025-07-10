@@ -5,11 +5,15 @@ import com.example.constants.Const;
 import com.example.entity.Dto.FileShare;
 import com.example.entity.RestBean;
 import com.example.entity.Vo.request.FileShareQuery;
+import com.example.entity.Vo.request.cancelShareVo;
+import com.example.entity.Vo.request.loadShareVo;
+import com.example.entity.Vo.request.shareFileVo;
 import com.example.entity.Vo.response.PaginationResultVO;
 import com.example.mapper.FileShareMapper;
 import com.example.service.FileShareService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,12 +27,13 @@ public class ShareController {
     FileShareMapper fileShareMapper;
 
      @RequestMapping("/loadShareList")
-    public RestBean loadShareList(@RequestAttribute(Const.ATTR_USER_ID)Integer userId, FileShareQuery query){
+    public RestBean loadShareList(@RequestAttribute(Const.ATTR_USER_ID)Integer userId, @RequestBody loadShareVo vo){
 
 
-        query.setUserId(userId);
-         query.setQueryFileName(true);
-          PaginationResultVO result= fileShareService.findListByPage(query);
+        vo.setUserId(userId);
+
+
+          PaginationResultVO result= fileShareService.findListByPage(vo);
 
      return RestBean.success(result);
     }
@@ -36,14 +41,12 @@ public class ShareController {
     @RequestMapping("/shareFile")
 
     public RestBean shareFile(@RequestAttribute(Const.ATTR_USER_ID)Integer userId,
-                                 String fileId,
-                                Integer validType,
-                                String code) {
+                              @RequestBody shareFileVo vo) {
 
         FileShare share = new FileShare();
-        share.setFileId(fileId);
-        share.setValidType(validType);
-        share.setCode(code);
+        share.setFileId(vo.getFileId());
+        share.setValidType(vo.getValidType());
+        share.setCode(vo.getCode());
         share.setUserId(userId);
         fileShareService.saveShare(share);
         return RestBean.success(share);
@@ -51,9 +54,9 @@ public class ShareController {
 
     @RequestMapping("/cancelShare")
 
-    public RestBean cancelShare(@RequestAttribute(Const.ATTR_USER_ID)Integer userId,  String shareIds) {
+    public RestBean cancelShare(@RequestAttribute(Const.ATTR_USER_ID)Integer userId,  @RequestBody cancelShareVo vo) {
 
-        fileShareService.deleteFileShareBatch(shareIds.split(","), userId);
+        fileShareService.deleteFileShareBatch(vo.getShareIds().split(","), userId);
 
         return RestBean.success();
     }

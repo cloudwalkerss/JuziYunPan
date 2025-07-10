@@ -4,6 +4,7 @@ import {get, login} from "@/net/index.js";
 import {ElMessage, ElForm, ElFormItem, ElInput, ElButton, ElCheckbox} from "element-plus";
 import router from "@/router/index.js";
 import axios from "axios";
+import {userStore} from "@/store/index.js";
 
 const baseurl = axios.defaults.baseURL;
 const captchaInput = ref('');
@@ -15,6 +16,7 @@ const captchaUrl = ref('');
 const loginFormRef = ref(null);
 // 是否正在登录
 const loading = ref(false);
+const store = userStore();
 
 //表单数据
 const form = reactive({
@@ -64,7 +66,12 @@ const refreshCaptcha = () => {
     ElMessage.error('获取验证码失败，请刷新页面重试');
   });
 };
-
+// 获取用户信息
+function getUserInfo() {
+  get('user/getUserInfo',(data)=>{
+    store.user=data
+  })
+}
 //登录请求
 function loginIndex() {
   if (!loginFormRef.value) return;
@@ -74,6 +81,7 @@ function loginIndex() {
       loading.value = true;
       login(form.username, form.password, rememberMe.value, form.captcha, captchaId.value, 
         () => {
+          getUserInfo()
           loading.value = false;
           router.push('/index');
         }, 

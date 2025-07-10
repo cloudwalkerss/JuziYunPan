@@ -8,9 +8,10 @@ export const userStore=defineStore('general',{
                 username:'',
                 email:'',
                 avatar: null,
-                role:'',
+                role:0,
                 registerTime:null,
-                 nickname:''
+                 nickname:'',
+
             }
 
 
