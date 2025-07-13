@@ -72,6 +72,7 @@ public class FileShareServiceImpl extends ServiceImpl<FileShareMapper, FileShare
             share.setFileName(fileInfo.getFileName());
             share.setFileType(fileInfo.getFileType());
             share.setFileCover(fileInfo.getFileCover());
+
             share.setFileCategory(fileShare.getFileCategory());
             share.setFolderType(fileShare.getFolderType());
 

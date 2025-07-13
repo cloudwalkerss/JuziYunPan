@@ -22,11 +22,23 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
-import * as pdfjsLib from 'pdfjs-dist'
+
 import { ElMessage } from 'element-plus'
+import * as pdfjsLib from 'pdfjs-dist';
+// pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/5.2.133/pdf.worker.min.js'; // 放在 public 下
+// import * as pdfjsLib from 'pdfjs-dist';
+
+// 设置 worker 路径（使用 CDN 或本地）
+// pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/build/pdf.worker.min.js'; // 本地
+// 或
+// 使用 BootCDN（国内推荐）
+// pdfjsLib.GlobalWorkerOptions.workerSrc = '//cdn.bootcdn.net/ajax/libs/pdf.js/5.2.133/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/5.2.133/pdf.worker.min.mjs';
 
 // 设置PDF.js worker路径
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+// pdfjsLib.GlobalWorkerOptions.workerSrc =
+// pdfjsLib.GlobalWorkerOptions.workerSrc = '//npm.elemecdn.com/pdfjs-dist@5.2.133/build/pdf.worker.min.js';
+// pdfjsLib.GlobalWorkerOptions.workerSrc = '//cdn.jsdelivr.net/npm/pdfjs-dist@5.2.133/build/pdf.worker.min.js';
 
 const props = defineProps({
   fileUrl: {

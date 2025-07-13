@@ -22,6 +22,7 @@ import com.example.entity.Vo.response.FolderVO;
 import com.example.entity.Vo.response.PaginationResultVO;
 import com.example.exception.BusinessException;
 import com.example.mapper.FileMapper;
+import com.example.mapper.FileShareMapper;
 import com.example.mapper.UserMapper;
 import com.example.service.FileService;
 
@@ -78,6 +79,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
     private FileServiceImpl fileInfoService;
     @Autowired
     private BeanCopyUtils beanCopyUtils;
+
+    @Autowired
+    private  FileShareMapper fileShareMapper;
 
     @Override
     public FileMapper getBaseMapper() {
@@ -756,6 +760,10 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
                 updateWrapper.eq("user_id", userId);
                 updateWrapper.set("del_flag", FileDelFlagEnums.DEL.getFlag());
                 fileMapper.update(null, updateWrapper);
+                QueryWrapper<FileShare>wrapper=new QueryWrapper<>();//fix
+                wrapper.in("file_id",delFilePidList);//fix
+                wrapper.eq("user_id", userId);
+                fileShareMapper.delete(wrapper);
             }
     
             //将选中的文件更新为回收站
@@ -763,6 +771,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, FileInfo> implement
             QueryWrapper<FileInfo> wrapper = new QueryWrapper<>();
             wrapper.in("file_id", delFileIdList);
             wrapper.eq("user_id", userId);
+            QueryWrapper<FileShare> Wrapper2 = new QueryWrapper<>();//fix
+            Wrapper2.in("file_id",delFileIdList);//fix
+            Wrapper2.eq("user_id", userId);//fix
+            fileShareMapper.delete(Wrapper2);//fix
+
              FileInfo updateInfo = new FileInfo();
              updateInfo.setDelFlag(FileDelFlagEnums.RECYCLE.getFlag());
              updateInfo.setUpdateTime(new Date());
